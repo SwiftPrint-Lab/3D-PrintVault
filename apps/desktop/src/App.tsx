@@ -1,50 +1,59 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
-import { invoke } from "@tauri-apps/api/core";
+import { useMemo, useState } from "react";
 import "./App.css";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+import { AppShell } from "./components/layout/AppShell";
+import { sampleAssets } from "./features/library/data";
+import { InspectorPanel } from "./features/library/components/InspectorPanel";
+import { LibraryPage } from "./features/library/components/LibraryPage";
+import type { Asset } from "./features/library/types/asset";
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
-  }
+function App() {
+  const [activeSection, setActiveSection] =
+    useState("Library");
+
+  const [viewMode, setViewMode] =
+    useState<"grid" | "list">("grid");
+
+  const [search, setSearch] = useState("");
+
+  const [selectedAsset, setSelectedAsset] =
+    useState<Asset>(sampleAssets[0]);
+
+  const filteredAssets = useMemo(() => {
+    const query = search.trim().toLowerCase();
+
+    if (!query) {
+      return sampleAssets;
+    }
+
+    return sampleAssets.filter((asset) => {
+      return (
+        asset.name.toLowerCase().includes(query) ||
+        asset.extension.toLowerCase().includes(query) ||
+        asset.technology.toLowerCase().includes(query)
+      );
+    });
+  }, [search]);
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
-
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
-
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
+    <AppShell
+      activeSection={activeSection}
+      search={search}
+      onSectionChange={setActiveSection}
+      onSearchChange={setSearch}
+    >
+      <div className="flex min-h-0 flex-1">
+        <LibraryPage
+          assets={filteredAssets}
+          selectedAsset={selectedAsset}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          onAssetSelect={setSelectedAsset}
         />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
-    </main>
+
+        <InspectorPanel asset={selectedAsset} />
+      </div>
+    </AppShell>
   );
 }
 
