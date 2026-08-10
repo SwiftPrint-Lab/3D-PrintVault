@@ -141,3 +141,14 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Rust / Tauri build output
+target/
+**/target/
+
+# IDE / editor local files
+.idea/
