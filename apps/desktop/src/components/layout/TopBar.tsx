@@ -4,12 +4,14 @@ interface TopBarProps {
     activeSection: string;
     search: string;
     onSearchChange: (value: string) => void;
+    onImport: () => void;
 }
 
 export function TopBar({
     activeSection,
     search,
     onSearchChange,
+    onImport,
 }: TopBarProps) {
     return (
         <header className="flex h-16 shrink-0 items-center justify-between border-b border-white/10 px-6">
@@ -37,7 +39,10 @@ export function TopBar({
                     />
                 </div>
 
-                <button className="flex h-9 items-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-medium transition hover:bg-red-500">
+                <button
+                    onClick={onImport}
+                    className="flex h-9 items-center gap-2 rounded-lg bg-red-600 px-4 text-sm font-medium transition hover:bg-red-500"
+                >
                     <FiPlus />
                     Import
                 </button>

@@ -7,6 +7,7 @@ interface AppShellProps {
     search: string;
     onSectionChange: (section: string) => void;
     onSearchChange: (value: string) => void;
+    onImport: () => void;
     children: ReactNode;
 }
 
@@ -15,6 +16,7 @@ export function AppShell({
     search,
     onSectionChange,
     onSearchChange,
+    onImport,
     children,
 }: AppShellProps) {
     return (
@@ -29,6 +31,7 @@ export function AppShell({
                     activeSection={activeSection}
                     search={search}
                     onSearchChange={onSearchChange}
+                    onImport={onImport}
                 />
 
                 {children}

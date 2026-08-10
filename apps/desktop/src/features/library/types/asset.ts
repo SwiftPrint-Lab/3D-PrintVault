@@ -9,6 +9,12 @@ export interface Asset {
     name: string;
     extension: string;
     technology: FabricationTechnology;
+
     size: string;
+    sizeBytes?: number;
+
     modified: string;
+    modifiedAt?: string;
+
+    path?: string;
 }
