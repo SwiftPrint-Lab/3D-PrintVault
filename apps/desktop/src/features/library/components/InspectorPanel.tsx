@@ -1,5 +1,6 @@
-import { FiBox, FiDatabase, FiTrash2 } from "react-icons/fi";
+import { FiDatabase, FiTrash2 } from "react-icons/fi";
 import type { Asset } from "../types/asset";
+import { AssetPreview } from "./AssetPreview";
 import { OpenInMenu } from "./OpenInMenu";
 
 interface InspectorPanelProps {
@@ -21,9 +22,11 @@ export function InspectorPanel({
 
             <div className="overflow-y-auto p-5">
                 <div className="mb-5 flex aspect-square items-center justify-center rounded-xl border border-white/10 bg-zinc-900">
-                    <div className="flex h-28 w-28 items-center justify-center rounded-3xl border border-white/10 bg-zinc-800 text-5xl text-red-500/70">
-                        <FiBox />
-                    </div>
+                    <AssetPreview
+                        asset={asset}
+                        selected
+                        large
+                    />
                 </div>
 
                 <h3 className="text-base font-semibold">
@@ -75,15 +78,6 @@ export function InspectorPanel({
                 >
                     <FiTrash2 />
                     Delete from Library
-                </button>
-
-                <div className="my-5 border-t border-white/10" />
-
-                <button className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 py-2 text-xs text-zinc-400 transition hover:bg-white/5 hover:text-white"
-                    onClick={() => onDelete(asset)}
-                >
-                    <FiTrash2 />
-                    Delete Asset
                 </button>
             </div>
         </aside>

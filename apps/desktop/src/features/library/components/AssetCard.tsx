@@ -1,4 +1,4 @@
-import { FiBox } from "react-icons/fi";
+import { AssetPreview } from "./AssetPreview";
 import type { Asset } from "../types/asset";
 
 interface AssetCardProps {
@@ -16,14 +16,12 @@ export function AssetCard({
         <button
             onClick={() => onSelect(asset)}
             className={`group overflow-hidden rounded-xl border text-left transition ${selected
-                    ? "border-red-600/80 bg-red-950/10"
-                    : "border-white/10 bg-white/[0.025] hover:border-white/20 hover:bg-white/[0.04]"
+                ? "border-red-600/80 bg-red-950/10"
+                : "border-white/10 bg-white/[0.025] hover:border-white/20 hover:bg-white/[0.04]"
                 }`}
         >
             <div className="flex aspect-[4/3] items-center justify-center border-b border-white/10 bg-zinc-900">
-                <div className="flex h-20 w-20 items-center justify-center rounded-2xl border border-white/10 bg-zinc-800 text-3xl text-zinc-500 transition group-hover:scale-105 group-hover:text-red-500">
-                    <FiBox />
-                </div>
+                <AssetPreview asset={asset} selected={selected} />
             </div>
 
             <div className="p-4">
