@@ -6,7 +6,7 @@ import { InspectorPanel } from "./features/library/components/InspectorPanel";
 import { LibraryPage } from "./features/library/components/LibraryPage";
 import type { Asset } from "./features/library/types/asset";
 import { selectAssetsForImport } from "./services/importService";
-import { loadAssets, saveAssets } from "./services/databaseService";
+import { assetExistsByPath, deleteAssetById, loadAssets, saveAssets } from "./services/databaseService";
 import { EmptyLibraryState } from "./features/library/components/EmptyLibraryState";
 
 function App() {
@@ -73,26 +73,41 @@ function App() {
       const importedAssets =
         await selectAssetsForImport();
 
-      console.log(
-        "Selected assets:",
-        importedAssets,
-      );
-
       if (importedAssets.length === 0) {
         return;
       }
 
-      // Save imported assets to SQLite.
-      await saveAssets(importedAssets);
+      const uniqueAssets: Asset[] = [];
 
-      // Update the visible Library.
+      for (const asset of importedAssets) {
+        if (!asset.path) {
+          continue;
+        }
+
+        const exists = await assetExistsByPath(
+          asset.path,
+        );
+
+        if (!exists) {
+          uniqueAssets.push(asset);
+        }
+      }
+
+      if (uniqueAssets.length === 0) {
+        alert(
+          "Those files are already in your 3D PrintVault library.",
+        );
+        return;
+      }
+
+      await saveAssets(uniqueAssets);
+
       setAssets((currentAssets) => [
-        ...importedAssets,
+        ...uniqueAssets,
         ...currentAssets,
       ]);
 
-      // Automatically select the first imported asset.
-      setSelectedAsset(importedAssets[0]);
+      setSelectedAsset(uniqueAssets[0]);
     } catch (error) {
       console.error(
         "Failed to import assets:",
@@ -101,6 +116,46 @@ function App() {
 
       alert(
         `Import failed: ${String(error)}`,
+      );
+    }
+  }
+
+  async function handleDeleteAsset(
+    asset: Asset,
+  ) {
+    const confirmed = window.confirm(
+      `Remove "${asset.name}" from 3D PrintVault?\n\nThis will not delete the original file from your Mac.`,
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await deleteAssetById(asset.id);
+
+      setAssets((currentAssets) => {
+        const updatedAssets =
+          currentAssets.filter(
+            (item) => item.id !== asset.id,
+          );
+
+        if (updatedAssets.length > 0) {
+          setSelectedAsset(updatedAssets[0]);
+        } else {
+          setSelectedAsset(null);
+        }
+
+        return updatedAssets;
+      });
+    } catch (error) {
+      console.error(
+        "Failed to delete asset:",
+        error,
+      );
+
+      alert(
+        `Delete failed: ${String(error)}`,
       );
     }
   }
@@ -126,6 +181,7 @@ function App() {
 
             <InspectorPanel
               asset={selectedAsset}
+              onDelete={handleDeleteAsset}
             />
           </>
         ) : (

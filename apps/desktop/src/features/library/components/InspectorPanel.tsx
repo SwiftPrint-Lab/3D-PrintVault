@@ -1,13 +1,15 @@
-import { FiBox, FiDatabase } from "react-icons/fi";
+import { FiBox, FiDatabase, FiTrash2 } from "react-icons/fi";
 import type { Asset } from "../types/asset";
 import { OpenInMenu } from "./OpenInMenu";
 
 interface InspectorPanelProps {
     asset: Asset;
+    onDelete: (asset: Asset) => void;
 }
 
 export function InspectorPanel({
     asset,
+    onDelete,
 }: InspectorPanelProps) {
     return (
         <aside className="w-80 shrink-0 border-l border-white/10 bg-zinc-950">
@@ -65,6 +67,23 @@ export function InspectorPanel({
                 <button className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 py-2 text-xs text-zinc-400 transition hover:bg-white/5 hover:text-white">
                     <FiDatabase />
                     Reveal in Finder
+                </button>
+
+                <button
+                    onClick={() => onDelete(asset)}
+                    className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-red-500/20 bg-red-500/5 py-2 text-xs text-red-400 transition hover:bg-red-500/10 hover:text-red-300"
+                >
+                    <FiTrash2 />
+                    Delete from Library
+                </button>
+
+                <div className="my-5 border-t border-white/10" />
+
+                <button className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 py-2 text-xs text-zinc-400 transition hover:bg-white/5 hover:text-white"
+                    onClick={() => onDelete(asset)}
+                >
+                    <FiTrash2 />
+                    Delete Asset
                 </button>
             </div>
         </aside>

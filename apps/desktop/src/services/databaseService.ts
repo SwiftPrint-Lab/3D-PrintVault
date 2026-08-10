@@ -110,3 +110,34 @@ export async function loadAssets(): Promise<Asset[]> {
         modifiedAt: row.modified_at ?? undefined,
     }));
 }
+
+export async function deleteAssetById(id: number) {
+    const database = await getDatabase();
+
+    await database.execute(
+        `
+      DELETE FROM assets
+      WHERE id = ?
+    `,
+        [id],
+    );
+}
+
+export async function assetExistsByPath(
+    path: string,
+): Promise<boolean> {
+    const database = await getDatabase();
+
+    const rows = await database.select<
+        { count: number }[]
+    >(
+        `
+      SELECT COUNT(*) as count
+      FROM assets
+      WHERE path = ?
+    `,
+        [path],
+    );
+
+    return (rows[0]?.count ?? 0) > 0;
+}
