@@ -17,4 +17,6 @@ export interface Asset {
     modifiedAt?: string;
 
     path?: string;
+
+    thumbnailPath?: string;
 }

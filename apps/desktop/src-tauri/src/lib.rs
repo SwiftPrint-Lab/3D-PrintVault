@@ -1,5 +1,8 @@
+use std::fs;
 use std::fs::File;
 use std::io::Read;
+
+use tauri::Manager;
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -36,6 +39,30 @@ fn extract_3mf_thumbnail(path: String) -> Result<Vec<u8>, String> {
     Err("No embedded 3MF thumbnail was found.".to_string())
 }
 
+#[tauri::command]
+fn save_model_thumbnail(
+    app: tauri::AppHandle,
+    asset_id: i64,
+    bytes: Vec<u8>,
+) -> Result<String, String> {
+    let cache_dir = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("Failed to resolve app cache directory: {error}"))?;
+
+    let thumbnail_dir = cache_dir.join("model-thumbnails");
+
+    fs::create_dir_all(&thumbnail_dir)
+        .map_err(|error| format!("Failed to create thumbnail cache directory: {error}"))?;
+
+    let thumbnail_path = thumbnail_dir.join(format!("asset-{asset_id}.png"));
+
+    fs::write(&thumbnail_path, bytes)
+        .map_err(|error| format!("Failed to save model thumbnail: {error}"))?;
+
+    Ok(thumbnail_path.to_string_lossy().to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -43,7 +70,11 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![greet, extract_3mf_thumbnail])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            extract_3mf_thumbnail,
+            save_model_thumbnail
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

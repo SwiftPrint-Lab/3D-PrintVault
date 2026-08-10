@@ -18,6 +18,7 @@ import {
 
 import type { Asset } from "../types/asset";
 import { getAssetPreviewDescriptor } from "../preview/assetPreview";
+import { useModelThumbnail } from "../hooks/useModelThumbnail";
 
 import {
     getThreeMfThumbnailUrl,
@@ -88,18 +89,32 @@ function AssetPreviewContent({
         : "h-20 w-20 rounded-2xl";
 
     /*
+     * STL / OBJ generated thumbnails
+     *
+     * Only enabled for Library cards.
+     * These are processed through the queue
+     * one model at a time.
+     */
+
+    const shouldGenerateModelThumbnail =
+        !large &&
+        (extension === "STL" ||
+            extension === "OBJ") &&
+        Boolean(asset.path);
+
+    const {
+        thumbnailUrl: modelThumbnailUrl,
+        loading: modelThumbnailLoading,
+        failed: modelThumbnailFailed,
+    } = useModelThumbnail(
+        asset,
+        shouldGenerateModelThumbnail,
+    );
+
+    /*
      * ---------------------------------------------------------
      * 3MF EMBEDDED LIBRARY THUMBNAIL
      * ---------------------------------------------------------
-     *
-     * Bambu Studio / OrcaSlicer-style 3MF projects often
-     * contain preview images inside the 3MF ZIP container.
-     *
-     * We extract those images through the Rust/Tauri command
-     * instead of loading the entire 3D model in every card.
-     *
-     * This only runs for Library cards.
-     * The Inspector continues to use the live 3D viewer.
      */
 
     useEffect(() => {
@@ -127,6 +142,7 @@ function AssetPreviewContent({
             }
 
             generatedUrl = url;
+
             setThreeMfThumbnailUrl(url);
         }
 
@@ -190,15 +206,50 @@ function AssetPreviewContent({
 
     /*
      * ---------------------------------------------------------
-     * EMBEDDED 3MF CARD THUMBNAIL
+     * GENERATED STL / OBJ LIBRARY THUMBNAIL
      * ---------------------------------------------------------
-     *
-     * If the Rust extractor found something such as:
-     *
-     * Metadata/plate_1_small.png
-     * Metadata/plate_1.png
-     *
-     * display it directly in the Library card.
+     */
+
+    if (
+        !large &&
+        modelThumbnailUrl
+    ) {
+        return (
+            <div className="h-full w-full overflow-hidden">
+                <img
+                    src={modelThumbnailUrl}
+                    alt={`${asset.name} model preview`}
+                    className="h-full w-full object-contain p-3"
+                />
+            </div>
+        );
+    }
+
+    /*
+     * Show a lightweight loading state while the
+     * thumbnail queue is working.
+     */
+
+    if (
+        !large &&
+        shouldGenerateModelThumbnail &&
+        modelThumbnailLoading
+    ) {
+        return (
+            <div className="flex h-full w-full flex-col items-center justify-center text-zinc-500">
+                <FiBox className="text-3xl" />
+
+                <span className="mt-2 text-[9px] font-semibold tracking-wide">
+                    Generating preview…
+                </span>
+            </div>
+        );
+    }
+
+    /*
+     * ---------------------------------------------------------
+     * EMBEDDED 3MF LIBRARY THUMBNAIL
+     * ---------------------------------------------------------
      */
 
     if (
@@ -238,16 +289,10 @@ function AssetPreviewContent({
      * ---------------------------------------------------------
      * LARGE 3MF PROTECTION
      * ---------------------------------------------------------
-     *
-     * Large 3MF files can contain substantial geometry,
-     * metadata, multiple objects, and slicer information.
-     *
-     * Do not automatically parse them just because the
-     * user selected the asset.
      */
 
     const largeModelThreshold =
-        100 * 1024 * 1024; // 100 MB
+        100 * 1024 * 1024;
 
     const isLarge3Mf =
         extension === "3MF" &&
@@ -297,13 +342,8 @@ function AssetPreviewContent({
 
     /*
      * ---------------------------------------------------------
-     * LIVE INTERACTIVE 3D VIEWER
+     * LIVE INTERACTIVE INSPECTOR VIEWER
      * ---------------------------------------------------------
-     *
-     * Only used in the Inspector.
-     *
-     * We intentionally avoid creating live WebGL canvases
-     * inside every Library card.
      */
 
     if (
@@ -339,12 +379,6 @@ function AssetPreviewContent({
      * ---------------------------------------------------------
      * FALLBACK ICONS
      * ---------------------------------------------------------
-     *
-     * STL and OBJ cards currently use these lightweight
-     * placeholders.
-     *
-     * We will later generate cached rendered thumbnails
-     * for formats that do not contain embedded previews.
      */
 
     const icon =
@@ -379,7 +413,9 @@ function AssetPreviewContent({
 
             {!large && (
                 <span className="mt-1 text-[9px] font-semibold tracking-wide text-zinc-600">
-                    {preview.extension}
+                    {modelThumbnailFailed
+                        ? `${preview.extension} preview failed`
+                        : preview.extension}
                 </span>
             )}
         </div>

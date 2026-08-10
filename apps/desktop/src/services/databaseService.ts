@@ -8,19 +8,29 @@ export async function getDatabase() {
         db = await Database.load("sqlite:3d-printvault.db");
 
         await db.execute(`
-      CREATE TABLE IF NOT EXISTS assets (
-        id INTEGER PRIMARY KEY,
-        name TEXT NOT NULL,
-        path TEXT NOT NULL UNIQUE,
-        extension TEXT NOT NULL,
-        technology TEXT NOT NULL,
-        size TEXT NOT NULL,
-        size_bytes INTEGER,
-        modified TEXT NOT NULL,
-        modified_at TEXT,
-        imported_at TEXT NOT NULL
-      )
-    `);
+            CREATE TABLE IF NOT EXISTS assets (
+              id INTEGER PRIMARY KEY,
+              name TEXT NOT NULL,
+              path TEXT NOT NULL UNIQUE,
+              extension TEXT NOT NULL,
+              technology TEXT NOT NULL,
+              size TEXT NOT NULL,
+              size_bytes INTEGER,
+              modified TEXT NOT NULL,
+              modified_at TEXT,
+              imported_at TEXT NOT NULL,
+              thumbnail_path TEXT
+              )
+            `);
+
+        try {
+            await db.execute(`
+                ALTER TABLE assets
+                ADD COLUMN thumbnail_path TEXT
+            `);
+        } catch {
+            // Column already exists.
+        }
     }
 
     return db;
@@ -41,9 +51,10 @@ export async function saveAsset(asset: Asset) {
         size_bytes,
         modified,
         modified_at,
-        imported_at
+        imported_at,
+        thumbnail_path
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
         [
             asset.id,
@@ -56,6 +67,7 @@ export async function saveAsset(asset: Asset) {
             asset.modified,
             asset.modifiedAt ?? null,
             new Date().toISOString(),
+            asset.thumbnailPath ?? null,
         ],
     );
 }
@@ -80,6 +92,7 @@ export async function loadAssets(): Promise<Asset[]> {
             size_bytes: number | null;
             modified: string;
             modified_at: string | null;
+            thumbnail_path: string | null;
         }[]
     >(
         `
@@ -92,7 +105,8 @@ export async function loadAssets(): Promise<Asset[]> {
         size,
         size_bytes,
         modified,
-        modified_at
+        modified_at,
+        thumbnail_path
       FROM assets
       ORDER BY imported_at DESC
     `,
@@ -108,6 +122,7 @@ export async function loadAssets(): Promise<Asset[]> {
         sizeBytes: row.size_bytes ?? undefined,
         modified: row.modified,
         modifiedAt: row.modified_at ?? undefined,
+        thumbnailPath: row.thumbnail_path ?? undefined,
     }));
 }
 
@@ -140,4 +155,23 @@ export async function assetExistsByPath(
     );
 
     return (rows[0]?.count ?? 0) > 0;
+}
+
+export async function updateAssetThumbnailPath(
+    id: number,
+    thumbnailPath: string | null,
+): Promise<void> {
+    const database = await getDatabase();
+
+    await database.execute(
+        `
+    UPDATE assets
+    SET thumbnail_path = ?
+    WHERE id = ?
+    `,
+        [
+            thumbnailPath,
+            id,
+        ],
+    );
 }
