@@ -9,7 +9,12 @@
     "core:default",
     "opener:default",
     "dialog:default",
+
     "fs:default",
-    "fs:allow-stat"
+    "fs:allow-stat",
+
+    "sql:default",
+    "sql:allow-execute",
+    "sql:allow-select"
   ]
 }

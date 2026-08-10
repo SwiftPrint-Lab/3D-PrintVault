@@ -1,15 +1,17 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 
 import { AppShell } from "./components/layout/AppShell";
 import { InspectorPanel } from "./features/library/components/InspectorPanel";
 import { LibraryPage } from "./features/library/components/LibraryPage";
-import { sampleAssets } from "./features/library/data";
 import type { Asset } from "./features/library/types/asset";
 import { selectAssetsForImport } from "./services/importService";
+import { loadAssets, saveAssets } from "./services/databaseService";
+import { EmptyLibraryState } from "./features/library/components/EmptyLibraryState";
 
 function App() {
-  const [activeSection, setActiveSection] = useState("Library");
+  const [activeSection, setActiveSection] =
+    useState("Library");
 
   const [viewMode, setViewMode] =
     useState<"grid" | "list">("grid");
@@ -17,10 +19,10 @@ function App() {
   const [search, setSearch] = useState("");
 
   const [assets, setAssets] =
-    useState<Asset[]>(sampleAssets);
+    useState<Asset[]>([]);
 
   const [selectedAsset, setSelectedAsset] =
-    useState<Asset>(sampleAssets[0]);
+    useState<Asset | null>(null);
 
   const filteredAssets = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -38,6 +40,32 @@ function App() {
     });
   }, [assets, search]);
 
+  useEffect(() => {
+    async function initializeLibrary() {
+      try {
+        const savedAssets = await loadAssets();
+
+        setAssets(savedAssets);
+
+        if (savedAssets.length > 0) {
+          setSelectedAsset(savedAssets[0]);
+        } else {
+          setSelectedAsset(null);
+        }
+      } catch (error) {
+        console.error(
+          "Failed to load database:",
+          error,
+        );
+
+        setAssets([]);
+        setSelectedAsset(null);
+      }
+    }
+
+    initializeLibrary();
+  }, []);
+
   async function handleImport() {
     console.log("Import button clicked");
 
@@ -45,21 +73,35 @@ function App() {
       const importedAssets =
         await selectAssetsForImport();
 
-      console.log("Selected assets:", importedAssets);
+      console.log(
+        "Selected assets:",
+        importedAssets,
+      );
 
       if (importedAssets.length === 0) {
         return;
       }
 
+      // Save imported assets to SQLite.
+      await saveAssets(importedAssets);
+
+      // Update the visible Library.
       setAssets((currentAssets) => [
         ...importedAssets,
         ...currentAssets,
       ]);
 
+      // Automatically select the first imported asset.
       setSelectedAsset(importedAssets[0]);
     } catch (error) {
-      console.error("Failed to import assets:", error);
-      alert(`Import failed: ${String(error)}`);
+      console.error(
+        "Failed to import assets:",
+        error,
+      );
+
+      alert(
+        `Import failed: ${String(error)}`,
+      );
     }
   }
 
@@ -72,15 +114,25 @@ function App() {
       onImport={handleImport}
     >
       <div className="flex min-h-0 flex-1">
-        <LibraryPage
-          assets={filteredAssets}
-          selectedAsset={selectedAsset}
-          viewMode={viewMode}
-          onViewModeChange={setViewMode}
-          onAssetSelect={setSelectedAsset}
-        />
+        {selectedAsset ? (
+          <>
+            <LibraryPage
+              assets={filteredAssets}
+              selectedAsset={selectedAsset}
+              viewMode={viewMode}
+              onViewModeChange={setViewMode}
+              onAssetSelect={setSelectedAsset}
+            />
 
-        <InspectorPanel asset={selectedAsset} />
+            <InspectorPanel
+              asset={selectedAsset}
+            />
+          </>
+        ) : (
+          <EmptyLibraryState
+            onImport={handleImport}
+          />
+        )}
       </div>
     </AppShell>
   );
