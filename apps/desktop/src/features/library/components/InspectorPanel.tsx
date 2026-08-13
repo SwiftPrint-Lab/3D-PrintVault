@@ -2,6 +2,7 @@ import { FiDatabase, FiTrash2 } from "react-icons/fi";
 import type { Asset } from "../types/asset";
 import { AssetPreview } from "./AssetPreview";
 import { OpenInMenu } from "./OpenInMenu";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 
 interface InspectorPanelProps {
     asset: Asset;
@@ -12,6 +13,25 @@ export function InspectorPanel({
     asset,
     onDelete,
 }: InspectorPanelProps) {
+    async function handleRevealInFinder() {
+        if (!asset.path) {
+            return;
+        }
+
+        try {
+            await revealItemInDir(asset.path);
+        } catch (error) {
+            console.error(
+                "Failed to reveal asset in Finder:",
+                error,
+            );
+
+            alert(
+                `Unable to reveal file in Finder: ${String(error)}`,
+            );
+        }
+    }
+
     return (
         <aside className="w-80 shrink-0 border-l border-white/10 bg-zinc-950">
             <div className="border-b border-white/10 px-5 py-4">
@@ -63,11 +83,16 @@ export function InspectorPanel({
 
                 <div className="my-5 border-t border-white/10" />
 
-                <OpenInMenu />
+                <OpenInMenu asset={asset} />
 
                 <div className="my-5 border-t border-white/10" />
 
-                <button className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 py-2 text-xs text-zinc-400 transition hover:bg-white/5 hover:text-white">
+                <button
+                    type="button"
+                    onClick={handleRevealInFinder}
+                    disabled={!asset.path}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg border border-white/10 py-2 text-xs text-zinc-400 transition hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                >
                     <FiDatabase />
                     Reveal in Finder
                 </button>

@@ -19,4 +19,8 @@ export interface Asset {
     path?: string;
 
     thumbnailPath?: string;
+
+    favorite?: boolean;
+
+    lastOpenedAt?: string;
 }

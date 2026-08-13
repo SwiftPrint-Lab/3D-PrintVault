@@ -1,3 +1,5 @@
+import type { MouseEvent } from "react";
+
 import { AssetPreview } from "./AssetPreview";
 import type { Asset } from "../types/asset";
 
@@ -5,23 +7,35 @@ interface AssetCardProps {
     asset: Asset;
     selected: boolean;
     onSelect: (asset: Asset) => void;
+    onContextMenu: (
+        event: MouseEvent,
+        asset: Asset,
+    ) => void;
 }
 
 export function AssetCard({
     asset,
     selected,
     onSelect,
+    onContextMenu,
 }: AssetCardProps) {
     return (
         <button
+            type="button"
             onClick={() => onSelect(asset)}
+            onContextMenu={(event) =>
+                onContextMenu(event, asset)
+            }
             className={`group overflow-hidden rounded-xl border text-left transition ${selected
-                ? "border-red-600/80 bg-red-950/10"
-                : "border-white/10 bg-white/[0.025] hover:border-white/20 hover:bg-white/[0.04]"
+                    ? "border-red-600/80 bg-red-950/10"
+                    : "border-white/10 bg-white/[0.025] hover:border-white/20 hover:bg-white/[0.04]"
                 }`}
         >
-            <div className="flex aspect-[4/3] items-center justify-center border-b border-white/10 bg-zinc-900">
-                <AssetPreview asset={asset} selected={selected} />
+            <div className="flex aspect-[4/3] items-center justify-center overflow-hidden bg-zinc-900">
+                <AssetPreview
+                    asset={asset}
+                    selected={selected}
+                />
             </div>
 
             <div className="p-4">
