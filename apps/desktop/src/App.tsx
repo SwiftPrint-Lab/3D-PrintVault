@@ -49,6 +49,7 @@ import {
   createMachine,
   deleteMachine,
   loadMachines,
+  updateMachine,
   type Collection,
   type Project,
   type ProjectStatus,
@@ -57,6 +58,7 @@ import {
 } from "./services/databaseService";
 
 import { MachinesPage } from "./features/machines/components/MachinesPage";
+import { getMachineStatusClasses } from "./features/machines/utils/machineStatus";
 
 function App() {
   /*
@@ -184,6 +186,23 @@ function App() {
   ] = useState<Machine | null>(
     null,
   );
+
+  const [
+    editingMachine,
+    setEditingMachine,
+  ] = useState(false);
+
+  const [
+    machineDraft,
+    setMachineDraft,
+  ] = useState<Machine | null>(
+    null,
+  );
+
+  const [
+    savingMachine,
+    setSavingMachine,
+  ] = useState(false);
 
   /*
    * ---------------------------------------------------------
@@ -1662,6 +1681,124 @@ function App() {
     );
   }
 
+  async function handleUpdateMachine(
+    machine: Machine,
+  ): Promise<void> {
+    try {
+      await updateMachine(
+        machine,
+      );
+
+      const refreshedMachines =
+        await loadMachines();
+
+      setMachines(
+        refreshedMachines,
+      );
+
+      const updatedMachine =
+        refreshedMachines.find(
+          (item) =>
+            item.id ===
+            machine.id,
+        );
+
+      if (updatedMachine) {
+        setSelectedMachine(
+          updatedMachine,
+        );
+      }
+    } catch (error) {
+      console.error(
+        "Failed to update machine:",
+        error,
+      );
+
+      alert(
+        `Unable to update machine: ${String(error)}`,
+      );
+
+      throw error;
+    }
+  }
+
+  function beginEditMachine() {
+    if (!selectedMachine) {
+      return;
+    }
+
+    setMachineDraft({
+      ...selectedMachine,
+    });
+
+    setEditingMachine(true);
+  }
+
+  function cancelEditMachine() {
+    setEditingMachine(false);
+    setMachineDraft(null);
+  }
+
+  function updateMachineDraft<K extends keyof Machine>(
+    field: K,
+    value: Machine[K],
+  ) {
+    setMachineDraft((current) => {
+      if (!current) {
+        return current;
+      }
+
+      return {
+        ...current,
+        [field]: value,
+      };
+    });
+  }
+
+  async function saveMachineChanges() {
+    if (!machineDraft) {
+      return;
+    }
+
+    if (
+      !machineDraft.name.trim() ||
+      !machineDraft.manufacturer.trim() ||
+      !machineDraft.model.trim()
+    ) {
+      alert(
+        "Machine name, manufacturer, and model are required.",
+      );
+
+      return;
+    }
+
+    try {
+      setSavingMachine(true);
+
+      await handleUpdateMachine({
+        ...machineDraft,
+        name: machineDraft.name.trim(),
+        manufacturer:
+          machineDraft.manufacturer.trim(),
+        model: machineDraft.model.trim(),
+        serialNumber:
+          machineDraft.serialNumber?.trim() ||
+          undefined,
+        ipAddress:
+          machineDraft.ipAddress?.trim() ||
+          undefined,
+        notes:
+          machineDraft.notes?.trim() ||
+          undefined,
+      });
+
+      setEditingMachine(false);
+      setMachineDraft(null);
+    } finally {
+      setSavingMachine(false);
+    }
+  }
+
   /*
    * ---------------------------------------------------------
    * SIDEBAR SECTION CHANGE
@@ -1698,6 +1835,14 @@ function App() {
       "Machine Detail"
     ) {
       setSelectedMachine(
+        null,
+      );
+
+      setEditingMachine(
+        false,
+      );
+
+      setMachineDraft(
         null,
       );
     }
@@ -1802,48 +1947,86 @@ function App() {
       selectedMachine
     ) {
       return (
-        <section className="flex min-w-0 flex-1 flex-col">
-          <div className="flex items-center border-b border-white/10 px-6 py-4">
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+            <div className="flex items-center">
+              <button
+                type="button"
+                onClick={() =>
+                  handleSectionChange(
+                    "Machines",
+                  )
+                }
+                className="text-xs text-zinc-400 transition hover:text-white"
+              >
+                ← Machines
+              </button>
+
+              <div className="ml-3">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-semibold text-zinc-100">
+                    {
+                      selectedMachine.name
+                    }
+                  </h2>
+
+                  <select
+                    value={
+                      selectedMachine.status
+                    }
+                    onChange={(event) =>
+                      void handleUpdateMachine({
+                        ...selectedMachine,
+                        status:
+                          event.target.value as Machine["status"],
+                      })
+                    }
+                    className={`rounded-md border px-2 py-1 text-[10px] outline-none transition ${getMachineStatusClasses(
+                      selectedMachine.status,
+                    )}`}
+                  >
+                    <option value="Ready">
+                      Ready
+                    </option>
+
+                    <option value="Busy">
+                      Busy
+                    </option>
+
+                    <option value="Maintenance">
+                      Maintenance
+                    </option>
+
+                    <option value="Offline">
+                      Offline
+                    </option>
+                  </select>
+                </div>
+
+                <p className="mt-1 text-xs text-zinc-500">
+                  {
+                    selectedMachine.manufacturer
+                  }{" "}
+                  {
+                    selectedMachine.model
+                  }
+                  {" · "}
+                  {
+                    selectedMachine.type
+                  }
+                </p>
+              </div>
+            </div>
+
             <button
               type="button"
-              onClick={() =>
-                handleSectionChange(
-                  "Machines",
-                )
+              onClick={
+                beginEditMachine
               }
-              className="text-xs text-zinc-400 transition hover:text-white"
+              className="rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-medium text-zinc-200 transition hover:border-red-500/40 hover:bg-red-500/10 hover:text-white"
             >
-              ← Machines
+              Edit Machine
             </button>
-
-            <div className="ml-3">
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-semibold text-zinc-100">
-                  {
-                    selectedMachine.name
-                  }
-                </h2>
-
-                <span className="rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[9px] text-emerald-400">
-                  {
-                    selectedMachine.status
-                  }
-                </span>
-              </div>
-
-              <p className="mt-1 text-xs text-zinc-500">
-                {
-                  selectedMachine.manufacturer
-                }{" "}
-                {
-                  selectedMachine.model
-                }
-                {" · "}
-                {
-                  selectedMachine.type
-                }
-              </p>
-            </div>
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-6">
@@ -1854,40 +2037,11 @@ function App() {
                 </h3>
 
                 <div className="mt-4 space-y-3 text-sm">
-                  <DetailRow
-                    label="Machine Name"
-                    value={
-                      selectedMachine.name
-                    }
-                  />
-
-                  <DetailRow
-                    label="Manufacturer"
-                    value={
-                      selectedMachine.manufacturer
-                    }
-                  />
-
-                  <DetailRow
-                    label="Model"
-                    value={
-                      selectedMachine.model
-                    }
-                  />
-
-                  <DetailRow
-                    label="Machine Type"
-                    value={
-                      selectedMachine.type
-                    }
-                  />
-
-                  <DetailRow
-                    label="Status"
-                    value={
-                      selectedMachine.status
-                    }
-                  />
+                  <DetailRow label="Machine Name" value={selectedMachine.name} />
+                  <DetailRow label="Manufacturer" value={selectedMachine.manufacturer} />
+                  <DetailRow label="Model" value={selectedMachine.model} />
+                  <DetailRow label="Machine Type" value={selectedMachine.type} />
+                  <DetailRow label="Status" value={selectedMachine.status} />
                 </div>
               </div>
 
@@ -1907,7 +2061,6 @@ function App() {
                         : "Not set"
                     }
                   />
-
                   <DetailRow
                     label="Nozzle Size"
                     value={
@@ -1916,26 +2069,266 @@ function App() {
                         : "Not set"
                     }
                   />
-
                   <DetailRow
                     label="Serial Number"
-                    value={
-                      selectedMachine.serialNumber ??
-                      "Not set"
-                    }
+                    value={selectedMachine.serialNumber ?? "Not set"}
                   />
-
                   <DetailRow
                     label="IP Address"
-                    value={
-                      selectedMachine.ipAddress ??
-                      "Not set"
-                    }
+                    value={selectedMachine.ipAddress ?? "Not set"}
                   />
                 </div>
               </div>
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-5 xl:col-span-2">
+                <h3 className="text-sm font-semibold text-zinc-100">
+                  Notes
+                </h3>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-zinc-400">
+                  {selectedMachine.notes ?? "No notes added."}
+                </p>
+              </div>
             </div>
           </div>
+
+          {editingMachine && machineDraft && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
+              <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-white/10 bg-zinc-950 shadow-2xl">
+                <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-zinc-100">
+                      Edit Machine
+                    </h3>
+                    <p className="mt-1 text-xs text-zinc-500">
+                      Update machine information and specifications.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={cancelEditMachine}
+                    className="text-xl leading-none text-zinc-500 transition hover:text-white"
+                    aria-label="Close edit machine"
+                  >
+                    ×
+                  </button>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto p-5">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-medium text-zinc-400">
+                        Machine Name
+                      </span>
+                      <input
+                        autoFocus
+                        value={machineDraft.name}
+                        onChange={(event) =>
+                          updateMachineDraft("name", event.target.value)
+                        }
+                        placeholder="Alpha Prime"
+                        className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
+                      />
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-medium text-zinc-400">
+                        Manufacturer
+                      </span>
+                      <input
+                        value={machineDraft.manufacturer}
+                        onChange={(event) =>
+                          updateMachineDraft("manufacturer", event.target.value)
+                        }
+                        placeholder="Bambu Lab"
+                        className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
+                      />
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-medium text-zinc-400">
+                        Model
+                      </span>
+                      <input
+                        value={machineDraft.model}
+                        onChange={(event) =>
+                          updateMachineDraft("model", event.target.value)
+                        }
+                        placeholder="X2D"
+                        className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
+                      />
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-medium text-zinc-400">
+                        Machine Type
+                      </span>
+                      <select
+                        value={machineDraft.type}
+                        onChange={(event) =>
+                          updateMachineDraft(
+                            "type",
+                            event.target.value as MachineType,
+                          )
+                        }
+                        className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
+                      >
+                        <option value="FDM / FFF">FDM / FFF</option>
+                        <option value="Resin">Resin</option>
+                        <option value="Laser">Laser</option>
+                        <option value="CNC">CNC</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-medium text-zinc-400">
+                        Status
+                      </span>
+                      <select
+                        value={machineDraft.status}
+                        onChange={(event) =>
+                          updateMachineDraft(
+                            "status",
+                            event.target.value as Machine["status"],
+                          )
+                        }
+                        className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
+                      >
+                        <option value="Ready">Ready</option>
+                        <option value="Busy">Busy</option>
+                        <option value="Offline">Offline</option>
+                        <option value="Maintenance">Maintenance</option>
+                      </select>
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-medium text-zinc-400">
+                        Nozzle Size (mm)
+                      </span>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.1"
+                        value={machineDraft.nozzleSize ?? ""}
+                        onChange={(event) =>
+                          updateMachineDraft(
+                            "nozzleSize",
+                            event.target.value === ""
+                              ? undefined
+                              : Number(event.target.value),
+                          )
+                        }
+                        placeholder="0.4"
+                        className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
+                      />
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-medium text-zinc-400">
+                        Serial Number
+                      </span>
+                      <input
+                        value={machineDraft.serialNumber ?? ""}
+                        onChange={(event) =>
+                          updateMachineDraft("serialNumber", event.target.value)
+                        }
+                        placeholder="Serial number"
+                        className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
+                      />
+                    </label>
+
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-medium text-zinc-400">
+                        IP Address
+                      </span>
+                      <input
+                        value={machineDraft.ipAddress ?? ""}
+                        onChange={(event) =>
+                          updateMachineDraft("ipAddress", event.target.value)
+                        }
+                        placeholder="192.168.1.100"
+                        className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
+                      />
+                    </label>
+                  </div>
+
+                  <div className="mt-5">
+                    <span className="mb-2 block text-xs font-medium text-zinc-400">
+                      Build Volume (mm)
+                    </span>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      {(["buildVolumeX", "buildVolumeY", "buildVolumeZ"] as const).map(
+                        (field, index) => (
+                          <label key={field} className="block">
+                            <span className="mb-1 block text-[10px] text-zinc-500">
+                              {["X", "Y", "Z"][index]}
+                            </span>
+                            <input
+                              type="number"
+                              min="0"
+                              value={machineDraft[field] ?? ""}
+                              onChange={(event) =>
+                                updateMachineDraft(
+                                  field,
+                                  event.target.value === ""
+                                    ? undefined
+                                    : Number(event.target.value),
+                                )
+                              }
+                              placeholder={["X", "Y", "Z"][index]}
+                              className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
+                            />
+                          </label>
+                        ),
+                      )}
+                    </div>
+                  </div>
+
+                  <label className="mt-5 block">
+                    <span className="mb-2 block text-xs font-medium text-zinc-400">
+                      Notes
+                    </span>
+                    <textarea
+                      rows={5}
+                      value={machineDraft.notes ?? ""}
+                      onChange={(event) =>
+                        updateMachineDraft("notes", event.target.value)
+                      }
+                      placeholder="Maintenance notes, configuration details, accessories, or other machine information..."
+                      className="w-full resize-y rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
+                    />
+                  </label>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 border-t border-white/10 px-5 py-4">
+                  <button
+                    type="button"
+                    onClick={cancelEditMachine}
+                    disabled={savingMachine}
+                    className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-400 transition hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => void saveMachineChanges()}
+                    disabled={
+                      savingMachine ||
+                      !machineDraft.name.trim() ||
+                      !machineDraft.manufacturer.trim() ||
+                      !machineDraft.model.trim()
+                    }
+                    className="rounded-lg bg-red-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {savingMachine ? "Saving..." : "Save Changes"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </section>
       );
     }
@@ -2712,7 +3105,10 @@ function App() {
           : activeSection ===
             "Project Detail"
             ? "Projects"
-            : activeSection
+            : activeSection ===
+              "Machine Detail"
+              ? "Machines"
+              : activeSection
       }
       onSectionChange={
         handleSectionChange

@@ -7,6 +7,10 @@ import type {
     MachineType,
 } from "../../../services/databaseService";
 
+import {
+    getMachineStatusClasses,
+} from "../utils/machineStatus";
+
 interface MachinesPageProps {
     machines: Machine[];
 
@@ -208,7 +212,11 @@ export function MachinesPage({
                                                 </p>
                                             </div>
 
-                                            <span className="shrink-0 rounded-md border border-emerald-500/20 bg-emerald-500/10 px-2 py-1 text-[9px] text-emerald-400">
+                                            <span
+                                                className={`shrink-0 rounded-md border px-2 py-1 text-[9px] ${getMachineStatusClasses(
+                                                    machine.status,
+                                                )}`}
+                                            >
                                                 {
                                                     machine.status
                                                 }

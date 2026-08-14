@@ -1578,6 +1578,84 @@ export async function loadMachines(): Promise<
     );
 }
 
+export async function updateMachine(
+    machine: Machine,
+): Promise<void> {
+    const database =
+        await getDatabase();
+
+    const trimmedName =
+        machine.name.trim();
+
+    const trimmedManufacturer =
+        machine.manufacturer.trim();
+
+    const trimmedModel =
+        machine.model.trim();
+
+    if (!trimmedName) {
+        throw new Error(
+            "Machine name cannot be empty.",
+        );
+    }
+
+    if (!trimmedManufacturer) {
+        throw new Error(
+            "Manufacturer cannot be empty.",
+        );
+    }
+
+    if (!trimmedModel) {
+        throw new Error(
+            "Model cannot be empty.",
+        );
+    }
+
+    await database.execute(
+        `
+    UPDATE machines
+    SET
+      name = ?,
+      manufacturer = ?,
+      model = ?,
+      type = ?,
+      status = ?,
+      serial_number = ?,
+      ip_address = ?,
+      build_volume_x = ?,
+      build_volume_y = ?,
+      build_volume_z = ?,
+      nozzle_size = ?,
+      notes = ?,
+      updated_at = ?
+    WHERE id = ?
+    `,
+        [
+            trimmedName,
+            trimmedManufacturer,
+            trimmedModel,
+            machine.type,
+            machine.status,
+            machine.serialNumber?.trim() ||
+            null,
+            machine.ipAddress?.trim() ||
+            null,
+            machine.buildVolumeX ??
+            null,
+            machine.buildVolumeY ??
+            null,
+            machine.buildVolumeZ ??
+            null,
+            machine.nozzleSize ??
+            null,
+            machine.notes?.trim() ||
+            null,
+            new Date().toISOString(),
+            machine.id,
+        ],
+    );
+}
+
 export async function deleteMachine(
     id: number,
 ): Promise<void> {
