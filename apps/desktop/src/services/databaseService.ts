@@ -54,6 +54,18 @@ export type MachineStatus =
     | "Offline"
     | "Maintenance";
 
+export type MaterialSystem =
+    | "None"
+    | "AMS"
+    | "AMS HT"
+    | "Other";
+
+export type ConnectionType =
+    | "Local Network"
+    | "Cloud"
+    | "USB"
+    | "Manual";
+
 export interface Machine {
     id: number;
     name: string;
@@ -61,13 +73,63 @@ export interface Machine {
     model: string;
     type: MachineType;
     status: MachineStatus;
+
     serialNumber?: string;
     ipAddress?: string;
+    hostname?: string;
+
     buildVolumeX?: number;
     buildVolumeY?: number;
     buildVolumeZ?: number;
+
     nozzleSize?: number;
+    buildPlate?: string;
+    materialSystem?: MaterialSystem;
+    connectionType?: ConnectionType;
+
     notes?: string;
+
+    createdAt: string;
+    updatedAt: string;
+}
+
+export type MaterialCategory =
+    | "Filament"
+    | "Resin"
+    | "Sheet"
+    | "Powder"
+    | "Other";
+
+export type MaterialDryingStatus =
+    | "Dry"
+    | "Needs Drying"
+    | "Drying"
+    | "Unknown";
+
+export interface Material {
+    id: number;
+
+    name: string;
+    brand: string;
+    category: MaterialCategory;
+    materialType: string;
+
+    color?: string;
+    colorHex?: string;
+
+    diameter?: number;
+
+    initialWeightGrams?: number;
+    remainingWeightGrams?: number;
+
+    cost?: number;
+
+    storageLocation?: string;
+
+    dryingStatus: MaterialDryingStatus;
+
+    notes?: string;
+
     createdAt: string;
     updatedAt: string;
 }
@@ -112,24 +174,94 @@ export async function getDatabase() {
     `);
 
         await db.execute(`
-            CREATE TABLE IF NOT EXISTS machines (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                manufacturer TEXT NOT NULL,
-                model TEXT NOT NULL,
-                type TEXT NOT NULL,
-                status TEXT NOT NULL DEFAULT 'Ready',
-                serial_number TEXT,
-                ip_address TEXT,
-                build_volume_x REAL,
-                build_volume_y REAL,
-                build_volume_z REAL,
-                nozzle_size REAL,
-                notes TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-               )
-            `);
+      CREATE TABLE IF NOT EXISTS machines (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        manufacturer TEXT NOT NULL,
+        model TEXT NOT NULL,
+        type TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Ready',
+        serial_number TEXT,
+        ip_address TEXT,
+        hostname TEXT,
+        build_volume_x REAL,
+        build_volume_y REAL,
+        build_volume_z REAL,
+        nozzle_size REAL,
+        build_plate TEXT,
+        material_system TEXT,
+        connection_type TEXT,
+        notes TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `);
+
+        await db.execute(`
+      CREATE TABLE IF NOT EXISTS materials (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        name TEXT NOT NULL,
+        brand TEXT NOT NULL,
+        category TEXT NOT NULL,
+        material_type TEXT NOT NULL,
+
+        color TEXT,
+        color_hex TEXT,
+
+        diameter REAL,
+
+        initial_weight_grams REAL,
+        remaining_weight_grams REAL,
+
+        cost REAL,
+
+        storage_location TEXT,
+
+        drying_status TEXT NOT NULL DEFAULT 'Unknown',
+
+        notes TEXT,
+
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    `);
+
+        try {
+            await db.execute(`
+    ALTER TABLE machines
+    ADD COLUMN build_plate TEXT
+  `);
+        } catch {
+            // Column already exists.
+        }
+
+        try {
+            await db.execute(`
+    ALTER TABLE machines
+    ADD COLUMN material_system TEXT
+  `);
+        } catch {
+            // Column already exists.
+        }
+
+        try {
+            await db.execute(`
+    ALTER TABLE machines
+    ADD COLUMN connection_type TEXT
+  `);
+        } catch {
+            // Column already exists.
+        }
+
+        try {
+            await db.execute(`
+    ALTER TABLE machines
+    ADD COLUMN hostname TEXT
+  `);
+        } catch {
+            // Column already exists.
+        }
 
         /*
          * Existing database migrations.
@@ -1516,6 +1648,10 @@ export async function loadMachines(): Promise<
                 notes: string | null;
                 created_at: string;
                 updated_at: string;
+                hostname: string | null;
+                build_plate: string | null;
+                material_system: MaterialSystem | null;
+                connection_type: ConnectionType | null;
             }[]
         >(
             `
@@ -1534,7 +1670,11 @@ export async function loadMachines(): Promise<
         nozzle_size,
         notes,
         created_at,
-        updated_at
+        updated_at,
+        hostname,
+        build_plate,
+        material_system,
+        connection_type
       FROM machines
       ORDER BY created_at DESC
       `,
@@ -1574,6 +1714,21 @@ export async function loadMachines(): Promise<
                 row.created_at,
             updatedAt:
                 row.updated_at,
+            hostname:
+                row.hostname ??
+                undefined,
+
+            buildPlate:
+                row.build_plate ??
+                undefined,
+
+            materialSystem:
+                row.material_system ??
+                undefined,
+
+            connectionType:
+                row.connection_type ??
+                undefined,
         }),
     );
 }
@@ -1614,21 +1769,25 @@ export async function updateMachine(
     await database.execute(
         `
     UPDATE machines
-    SET
-      name = ?,
-      manufacturer = ?,
-      model = ?,
-      type = ?,
-      status = ?,
-      serial_number = ?,
-      ip_address = ?,
-      build_volume_x = ?,
-      build_volume_y = ?,
-      build_volume_z = ?,
-      nozzle_size = ?,
-      notes = ?,
-      updated_at = ?
-    WHERE id = ?
+SET
+  name = ?,
+  manufacturer = ?,
+  model = ?,
+  type = ?,
+  status = ?,
+  serial_number = ?,
+  ip_address = ?,
+  hostname = ?,
+  build_volume_x = ?,
+  build_volume_y = ?,
+  build_volume_z = ?,
+  nozzle_size = ?,
+  build_plate = ?,
+  material_system = ?,
+  connection_type = ?,
+  notes = ?,
+  updated_at = ?
+WHERE id = ?
     `,
         [
             trimmedName,
@@ -1636,23 +1795,43 @@ export async function updateMachine(
             trimmedModel,
             machine.type,
             machine.status,
+
             machine.serialNumber?.trim() ||
             null,
+
             machine.ipAddress?.trim() ||
             null,
+
+            machine.hostname?.trim() ||
+            null,
+
             machine.buildVolumeX ??
             null,
+
             machine.buildVolumeY ??
             null,
+
             machine.buildVolumeZ ??
             null,
+
             machine.nozzleSize ??
             null,
+
+            machine.buildPlate?.trim() ||
+            null,
+
+            machine.materialSystem ??
+            null,
+
+            machine.connectionType ??
+            null,
+
             machine.notes?.trim() ||
             null,
+
             new Date().toISOString(),
             machine.id,
-        ],
+        ]
     );
 }
 
@@ -1668,5 +1847,330 @@ export async function deleteMachine(
     WHERE id = ?
     `,
         [id],
+    );
+}
+
+export async function createMaterial(
+    name: string,
+    brand: string,
+    category: MaterialCategory,
+    materialType: string,
+): Promise<Material> {
+    const database =
+        await getDatabase();
+
+    const trimmedName =
+        name.trim();
+
+    const trimmedBrand =
+        brand.trim();
+
+    const trimmedMaterialType =
+        materialType.trim();
+
+    if (!trimmedName) {
+        throw new Error(
+            "Material name cannot be empty.",
+        );
+    }
+
+    if (!trimmedBrand) {
+        throw new Error(
+            "Material brand cannot be empty.",
+        );
+    }
+
+    if (!trimmedMaterialType) {
+        throw new Error(
+            "Material type cannot be empty.",
+        );
+    }
+
+    const now =
+        new Date().toISOString();
+
+    const result =
+        await database.execute(
+            `
+      INSERT INTO materials (
+        name,
+        brand,
+        category,
+        material_type,
+        drying_status,
+        created_at,
+        updated_at
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      `,
+            [
+                trimmedName,
+                trimmedBrand,
+                category,
+                trimmedMaterialType,
+                "Unknown",
+                now,
+                now,
+            ],
+        );
+
+    return {
+        id: Number(
+            result.lastInsertId,
+        ),
+
+        name:
+            trimmedName,
+
+        brand:
+            trimmedBrand,
+
+        category,
+
+        materialType:
+            trimmedMaterialType,
+
+        dryingStatus:
+            "Unknown",
+
+        createdAt:
+            now,
+
+        updatedAt:
+            now,
+    };
+}
+
+export async function loadMaterials(): Promise<
+    Material[]
+> {
+    const database =
+        await getDatabase();
+
+    const rows =
+        await database.select<
+            {
+                id: number;
+
+                name: string;
+                brand: string;
+                category: MaterialCategory;
+                material_type: string;
+
+                color: string | null;
+                color_hex: string | null;
+
+                diameter: number | null;
+
+                initial_weight_grams:
+                number | null;
+
+                remaining_weight_grams:
+                number | null;
+
+                cost: number | null;
+
+                storage_location:
+                string | null;
+
+                drying_status:
+                MaterialDryingStatus;
+
+                notes: string | null;
+
+                created_at: string;
+                updated_at: string;
+            }[]
+        >(
+            `
+      SELECT
+        id,
+        name,
+        brand,
+        category,
+        material_type,
+        color,
+        color_hex,
+        diameter,
+        initial_weight_grams,
+        remaining_weight_grams,
+        cost,
+        storage_location,
+        drying_status,
+        notes,
+        created_at,
+        updated_at
+      FROM materials
+      ORDER BY created_at DESC
+      `,
+        );
+
+    return rows.map(
+        (row) => ({
+            id:
+                row.id,
+
+            name:
+                row.name,
+
+            brand:
+                row.brand,
+
+            category:
+                row.category,
+
+            materialType:
+                row.material_type,
+
+            color:
+                row.color ??
+                undefined,
+
+            colorHex:
+                row.color_hex ??
+                undefined,
+
+            diameter:
+                row.diameter ??
+                undefined,
+
+            initialWeightGrams:
+                row.initial_weight_grams ??
+                undefined,
+
+            remainingWeightGrams:
+                row.remaining_weight_grams ??
+                undefined,
+
+            cost:
+                row.cost ??
+                undefined,
+
+            storageLocation:
+                row.storage_location ??
+                undefined,
+
+            dryingStatus:
+                row.drying_status,
+
+            notes:
+                row.notes ??
+                undefined,
+
+            createdAt:
+                row.created_at,
+
+            updatedAt:
+                row.updated_at,
+        }),
+    );
+}
+
+export async function updateMaterial(
+    material: Material,
+): Promise<void> {
+    const database =
+        await getDatabase();
+
+    const trimmedName =
+        material.name.trim();
+
+    const trimmedBrand =
+        material.brand.trim();
+
+    const trimmedMaterialType =
+        material.materialType.trim();
+
+    if (!trimmedName) {
+        throw new Error(
+            "Material name cannot be empty.",
+        );
+    }
+
+    if (!trimmedBrand) {
+        throw new Error(
+            "Material brand cannot be empty.",
+        );
+    }
+
+    if (!trimmedMaterialType) {
+        throw new Error(
+            "Material type cannot be empty.",
+        );
+    }
+
+    await database.execute(
+        `
+        UPDATE materials
+        SET
+            name = ?,
+            brand = ?,
+            category = ?,
+            material_type = ?,
+            color = ?,
+            color_hex = ?,
+            diameter = ?,
+            initial_weight_grams = ?,
+            remaining_weight_grams = ?,
+            cost = ?,
+            storage_location = ?,
+            drying_status = ?,
+            notes = ?,
+            updated_at = ?
+        WHERE id = ?
+        `,
+        [
+            trimmedName,
+            trimmedBrand,
+            material.category,
+            trimmedMaterialType,
+
+            material.color?.trim() ||
+            null,
+
+            material.colorHex?.trim() ||
+            null,
+
+            material.diameter ??
+            null,
+
+            material.initialWeightGrams ??
+            null,
+
+            material.remainingWeightGrams ??
+            null,
+
+            material.cost ??
+            null,
+
+            material.storageLocation?.trim() ||
+            null,
+
+            material.dryingStatus,
+
+            material.notes?.trim() ||
+            null,
+
+            new Date().toISOString(),
+
+            material.id,
+        ],
+    );
+}
+
+export async function deleteMaterial(
+    id: number,
+): Promise<void> {
+    const database =
+        await getDatabase();
+
+    await database.execute(
+        `
+    DELETE FROM materials
+    WHERE id = ?
+    `,
+        [
+            id,
+        ],
     );
 }

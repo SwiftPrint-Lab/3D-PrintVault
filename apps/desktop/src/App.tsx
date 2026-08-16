@@ -50,15 +50,31 @@ import {
   deleteMachine,
   loadMachines,
   updateMachine,
+  createMaterial,
+  deleteMaterial,
+  loadMaterials,
+  updateMaterial,
   type Collection,
   type Project,
   type ProjectStatus,
   type Machine,
   type MachineType,
+  type MaterialSystem,
+  type ConnectionType,
+  type Material,
+  type MaterialCategory,
+  type MaterialDryingStatus,
 } from "./services/databaseService";
 
 import { MachinesPage } from "./features/machines/components/MachinesPage";
 import { getMachineStatusClasses } from "./features/machines/utils/machineStatus";
+import { MaterialsPage } from "./features/materials/components/MaterialsPage";
+import {
+  getMaterialInventoryStatus,
+  getMaterialInventoryStatusClasses,
+  getMaterialProgressBarClasses,
+  getMaterialRemainingPercentage,
+} from "./features/materials/utils/materialInventory";
 
 function App() {
   /*
@@ -202,6 +218,35 @@ function App() {
   const [
     savingMachine,
     setSavingMachine,
+  ] = useState(false);
+
+  const [
+    materials,
+    setMaterials,
+  ] = useState<Material[]>([]);
+
+  const [
+    selectedMaterial,
+    setSelectedMaterial,
+  ] = useState<Material | null>(
+    null,
+  );
+
+  const [
+    editingMaterial,
+    setEditingMaterial,
+  ] = useState(false);
+
+  const [
+    materialDraft,
+    setMaterialDraft,
+  ] = useState<Material | null>(
+    null,
+  );
+
+  const [
+    savingMaterial,
+    setSavingMaterial,
   ] = useState(false);
 
   /*
@@ -364,12 +409,14 @@ function App() {
           savedCollections,
           savedProjects,
           savedMachines,
+          savedMaterials,
         ] =
           await Promise.all([
             loadAssets(),
             loadCollections(),
             loadProjects(),
             loadMachines(),
+            loadMaterials(),
           ]);
 
         setAssets(
@@ -386,6 +433,10 @@ function App() {
 
         setMachines(
           savedMachines,
+        );
+
+        setMaterials(
+          savedMaterials,
         );
 
         if (
@@ -410,6 +461,7 @@ function App() {
         setCollections([]);
         setProjects([]);
         setMachines([]);
+        setMaterials([]);
 
         setSelectedAsset(
           null,
@@ -1722,6 +1774,18 @@ function App() {
     }
   }
 
+  function handleOpenMaterial(
+    material: Material,
+  ) {
+    setSelectedMaterial(
+      material,
+    );
+
+    setActiveSection(
+      "Material Detail",
+    );
+  }
+
   function beginEditMachine() {
     if (!selectedMachine) {
       return;
@@ -1830,6 +1894,11 @@ function App() {
       );
     }
 
+    /*
+     * Leave machine-detail state
+     * when navigating somewhere else.
+     */
+
     if (
       section !==
       "Machine Detail"
@@ -1865,6 +1934,28 @@ function App() {
       );
     }
 
+    /*
+     * Leave material-detail state
+     * when navigating somewhere else.
+     */
+
+    if (
+      section !==
+      "Material Detail"
+    ) {
+      setSelectedMaterial(
+        null,
+      );
+
+      setEditingMaterial(
+        false,
+      );
+
+      setMaterialDraft(
+        null,
+      );
+    }
+
     if (
       section ===
       "Library" ||
@@ -1875,10 +1966,236 @@ function App() {
       section ===
       "Projects" ||
       section ===
-      "Collections"
+      "Collections" ||
+      section ===
+      "Machines" ||
+      section ===
+      "Materials"
     ) {
       setTechnologyFilter(
         "All Assets",
+      );
+    }
+  }
+
+  async function handleCreateMaterial(
+    name: string,
+    brand: string,
+    category: MaterialCategory,
+    materialType: string,
+  ): Promise<Material | null> {
+    try {
+      const material =
+        await createMaterial(
+          name,
+          brand,
+          category,
+          materialType,
+        );
+
+      const refreshedMaterials =
+        await loadMaterials();
+
+      setMaterials(
+        refreshedMaterials,
+      );
+
+      return material;
+    } catch (error) {
+      console.error(
+        "Failed to create material:",
+        error,
+      );
+
+      alert(
+        `Unable to create material: ${String(error)}`,
+      );
+
+      return null;
+    }
+  }
+
+  async function handleDeleteMaterial(
+    material: Material,
+  ): Promise<void> {
+    const confirmed =
+      window.confirm(
+        `Delete material "${material.name}"?`,
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await deleteMaterial(
+        material.id,
+      );
+
+      const refreshedMaterials =
+        await loadMaterials();
+
+      setMaterials(
+        refreshedMaterials,
+      );
+    } catch (error) {
+      console.error(
+        "Failed to delete material:",
+        error,
+      );
+
+      alert(
+        `Unable to delete material: ${String(error)}`,
+      );
+    }
+  }
+
+  async function handleUpdateMaterial(
+    material: Material,
+  ): Promise<void> {
+    try {
+      await updateMaterial(
+        material,
+      );
+
+      const refreshedMaterials =
+        await loadMaterials();
+
+      setMaterials(
+        refreshedMaterials,
+      );
+
+      const updatedMaterial =
+        refreshedMaterials.find(
+          (item) =>
+            item.id ===
+            material.id,
+        );
+
+      if (updatedMaterial) {
+        setSelectedMaterial(
+          updatedMaterial,
+        );
+      }
+    } catch (error) {
+      console.error(
+        "Failed to update material:",
+        error,
+      );
+
+      alert(
+        `Unable to update material: ${String(error)}`,
+      );
+
+      throw error;
+    }
+  }
+
+  function beginEditMaterial() {
+    if (!selectedMaterial) {
+      return;
+    }
+
+    setMaterialDraft({
+      ...selectedMaterial,
+    });
+
+    setEditingMaterial(
+      true,
+    );
+  }
+
+  function cancelEditMaterial() {
+    setEditingMaterial(
+      false,
+    );
+
+    setMaterialDraft(
+      null,
+    );
+  }
+
+  function updateMaterialDraft<
+    K extends keyof Material
+  >(
+    field: K,
+    value: Material[K],
+  ) {
+    setMaterialDraft(
+      (current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          [field]: value,
+        };
+      },
+    );
+  }
+
+  async function saveMaterialChanges() {
+    if (!materialDraft) {
+      return;
+    }
+
+    if (
+      !materialDraft.name.trim() ||
+      !materialDraft.brand.trim() ||
+      !materialDraft.materialType.trim()
+    ) {
+      alert(
+        "Material name, brand, and material type are required.",
+      );
+
+      return;
+    }
+
+    try {
+      setSavingMaterial(
+        true,
+      );
+
+      await handleUpdateMaterial({
+        ...materialDraft,
+
+        name:
+          materialDraft.name.trim(),
+
+        brand:
+          materialDraft.brand.trim(),
+
+        materialType:
+          materialDraft.materialType.trim(),
+
+        color:
+          materialDraft.color?.trim() ||
+          undefined,
+
+        colorHex:
+          materialDraft.colorHex?.trim() ||
+          undefined,
+
+        storageLocation:
+          materialDraft.storageLocation?.trim() ||
+          undefined,
+
+        notes:
+          materialDraft.notes?.trim() ||
+          undefined,
+      });
+
+      setEditingMaterial(
+        false,
+      );
+
+      setMaterialDraft(
+        null,
+      );
+    } finally {
+      setSavingMaterial(
+        false,
       );
     }
   }
@@ -1948,6 +2265,10 @@ function App() {
     ) {
       return (
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {/* ------------------------------------------------------
+       * MACHINE DETAIL HEADER
+       * ------------------------------------------------------ */}
+
           <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
             <div className="flex items-center">
               <button
@@ -2029,21 +2350,62 @@ function App() {
             </button>
           </div>
 
+          {/* ------------------------------------------------------
+       * MACHINE DETAIL CONTENT
+       * ------------------------------------------------------ */}
+
           <div className="min-h-0 flex-1 overflow-y-auto p-6">
             <div className="grid gap-4 xl:grid-cols-2">
+              {/* --------------------------------------------------
+           * MACHINE INFORMATION
+           * -------------------------------------------------- */}
+
               <div className="rounded-xl border border-white/10 bg-white/[0.025] p-5">
                 <h3 className="text-sm font-semibold text-zinc-100">
                   Machine Information
                 </h3>
 
                 <div className="mt-4 space-y-3 text-sm">
-                  <DetailRow label="Machine Name" value={selectedMachine.name} />
-                  <DetailRow label="Manufacturer" value={selectedMachine.manufacturer} />
-                  <DetailRow label="Model" value={selectedMachine.model} />
-                  <DetailRow label="Machine Type" value={selectedMachine.type} />
-                  <DetailRow label="Status" value={selectedMachine.status} />
+                  <DetailRow
+                    label="Machine Name"
+                    value={
+                      selectedMachine.name
+                    }
+                  />
+
+                  <DetailRow
+                    label="Manufacturer"
+                    value={
+                      selectedMachine.manufacturer
+                    }
+                  />
+
+                  <DetailRow
+                    label="Model"
+                    value={
+                      selectedMachine.model
+                    }
+                  />
+
+                  <DetailRow
+                    label="Machine Type"
+                    value={
+                      selectedMachine.type
+                    }
+                  />
+
+                  <DetailRow
+                    label="Status"
+                    value={
+                      selectedMachine.status
+                    }
+                  />
                 </div>
               </div>
+
+              {/* --------------------------------------------------
+           * SPECIFICATIONS
+           * -------------------------------------------------- */}
 
               <div className="rounded-xl border border-white/10 bg-white/[0.025] p-5">
                 <h3 className="text-sm font-semibold text-zinc-100">
@@ -2061,6 +2423,7 @@ function App() {
                         : "Not set"
                     }
                   />
+
                   <DetailRow
                     label="Nozzle Size"
                     value={
@@ -2069,266 +2432,688 @@ function App() {
                         : "Not set"
                     }
                   />
+
                   <DetailRow
                     label="Serial Number"
-                    value={selectedMachine.serialNumber ?? "Not set"}
+                    value={
+                      selectedMachine.serialNumber ??
+                      "Not set"
+                    }
                   />
+
                   <DetailRow
                     label="IP Address"
-                    value={selectedMachine.ipAddress ?? "Not set"}
+                    value={
+                      selectedMachine.ipAddress ??
+                      "Not set"
+                    }
                   />
                 </div>
               </div>
+
+              {/* --------------------------------------------------
+           * CONFIGURATION
+           * -------------------------------------------------- */}
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-5">
+                <h3 className="text-sm font-semibold text-zinc-100">
+                  Configuration
+                </h3>
+
+                <div className="mt-4 space-y-3 text-sm">
+                  <DetailRow
+                    label="Build Plate"
+                    value={
+                      selectedMachine.buildPlate ??
+                      "Not set"
+                    }
+                  />
+
+                  <DetailRow
+                    label="Material System"
+                    value={
+                      selectedMachine.materialSystem ??
+                      "Not set"
+                    }
+                  />
+
+                  <DetailRow
+                    label="Connection Type"
+                    value={
+                      selectedMachine.connectionType ??
+                      "Not set"
+                    }
+                  />
+
+                  <DetailRow
+                    label="Hostname"
+                    value={
+                      selectedMachine.hostname ??
+                      "Not set"
+                    }
+                  />
+                </div>
+              </div>
+
+              {/* --------------------------------------------------
+           * CONNECTION
+           * -------------------------------------------------- */}
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-5">
+                <h3 className="text-sm font-semibold text-zinc-100">
+                  Connection
+                </h3>
+
+                <div className="mt-4 space-y-3 text-sm">
+                  <DetailRow
+                    label="Connection Type"
+                    value={
+                      selectedMachine.connectionType ??
+                      "Not set"
+                    }
+                  />
+
+                  <DetailRow
+                    label="Hostname"
+                    value={
+                      selectedMachine.hostname ??
+                      "Not set"
+                    }
+                  />
+
+                  <DetailRow
+                    label="IP Address"
+                    value={
+                      selectedMachine.ipAddress ??
+                      "Not set"
+                    }
+                  />
+                </div>
+              </div>
+
+              {/* --------------------------------------------------
+           * NOTES
+           * -------------------------------------------------- */}
 
               <div className="rounded-xl border border-white/10 bg-white/[0.025] p-5 xl:col-span-2">
                 <h3 className="text-sm font-semibold text-zinc-100">
                   Notes
                 </h3>
+
                 <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-zinc-400">
-                  {selectedMachine.notes ?? "No notes added."}
+                  {
+                    selectedMachine.notes ??
+                    "No notes added."
+                  }
                 </p>
               </div>
             </div>
           </div>
 
-          {editingMachine && machineDraft && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
-              <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-white/10 bg-zinc-950 shadow-2xl">
-                <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
-                  <div>
-                    <h3 className="text-sm font-semibold text-zinc-100">
-                      Edit Machine
-                    </h3>
-                    <p className="mt-1 text-xs text-zinc-500">
-                      Update machine information and specifications.
-                    </p>
+          {/* ------------------------------------------------------
+       * EDIT MACHINE MODAL
+       * ------------------------------------------------------ */}
+
+          {editingMachine &&
+            machineDraft && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
+                <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-white/10 bg-zinc-950 shadow-2xl">
+                  {/* ------------------------------------------------
+               * MODAL HEADER
+               * ------------------------------------------------ */}
+
+                  <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-zinc-100">
+                        Edit Machine
+                      </h3>
+
+                      <p className="mt-1 text-xs text-zinc-500">
+                        Update machine information, specifications, and configuration.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={
+                        cancelEditMachine
+                      }
+                      className="text-xl leading-none text-zinc-500 transition hover:text-white"
+                      aria-label="Close edit machine"
+                    >
+                      ×
+                    </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={cancelEditMachine}
-                    className="text-xl leading-none text-zinc-500 transition hover:text-white"
-                    aria-label="Close edit machine"
-                  >
-                    ×
-                  </button>
-                </div>
+                  {/* ------------------------------------------------
+               * MODAL CONTENT
+               * ------------------------------------------------ */}
 
-                <div className="min-h-0 flex-1 overflow-y-auto p-5">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <label className="block">
-                      <span className="mb-2 block text-xs font-medium text-zinc-400">
-                        Machine Name
-                      </span>
-                      <input
-                        autoFocus
-                        value={machineDraft.name}
-                        onChange={(event) =>
-                          updateMachineDraft("name", event.target.value)
-                        }
-                        placeholder="Alpha Prime"
-                        className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
-                      />
-                    </label>
+                  <div className="min-h-0 flex-1 overflow-y-auto p-5">
+                    {/* ----------------------------------------------
+                 * MACHINE INFORMATION
+                 * ---------------------------------------------- */}
 
-                    <label className="block">
-                      <span className="mb-2 block text-xs font-medium text-zinc-400">
-                        Manufacturer
-                      </span>
-                      <input
-                        value={machineDraft.manufacturer}
-                        onChange={(event) =>
-                          updateMachineDraft("manufacturer", event.target.value)
-                        }
-                        placeholder="Bambu Lab"
-                        className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
-                      />
-                    </label>
+                    <div>
+                      <h4 className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                        Machine Information
+                      </h4>
 
-                    <label className="block">
-                      <span className="mb-2 block text-xs font-medium text-zinc-400">
-                        Model
-                      </span>
-                      <input
-                        value={machineDraft.model}
-                        onChange={(event) =>
-                          updateMachineDraft("model", event.target.value)
-                        }
-                        placeholder="X2D"
-                        className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
-                      />
-                    </label>
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Machine Name
+                          </span>
 
-                    <label className="block">
-                      <span className="mb-2 block text-xs font-medium text-zinc-400">
-                        Machine Type
-                      </span>
-                      <select
-                        value={machineDraft.type}
-                        onChange={(event) =>
-                          updateMachineDraft(
-                            "type",
-                            event.target.value as MachineType,
-                          )
-                        }
-                        className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
-                      >
-                        <option value="FDM / FFF">FDM / FFF</option>
-                        <option value="Resin">Resin</option>
-                        <option value="Laser">Laser</option>
-                        <option value="CNC">CNC</option>
-                        <option value="Other">Other</option>
-                      </select>
-                    </label>
+                          <input
+                            autoFocus
+                            value={
+                              machineDraft.name
+                            }
+                            onChange={(event) =>
+                              updateMachineDraft(
+                                "name",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="Alpha Prime"
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
+                          />
+                        </label>
 
-                    <label className="block">
-                      <span className="mb-2 block text-xs font-medium text-zinc-400">
-                        Status
-                      </span>
-                      <select
-                        value={machineDraft.status}
-                        onChange={(event) =>
-                          updateMachineDraft(
-                            "status",
-                            event.target.value as Machine["status"],
-                          )
-                        }
-                        className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
-                      >
-                        <option value="Ready">Ready</option>
-                        <option value="Busy">Busy</option>
-                        <option value="Offline">Offline</option>
-                        <option value="Maintenance">Maintenance</option>
-                      </select>
-                    </label>
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Manufacturer
+                          </span>
 
-                    <label className="block">
-                      <span className="mb-2 block text-xs font-medium text-zinc-400">
-                        Nozzle Size (mm)
-                      </span>
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.1"
-                        value={machineDraft.nozzleSize ?? ""}
-                        onChange={(event) =>
-                          updateMachineDraft(
-                            "nozzleSize",
-                            event.target.value === ""
-                              ? undefined
-                              : Number(event.target.value),
-                          )
-                        }
-                        placeholder="0.4"
-                        className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
-                      />
-                    </label>
+                          <input
+                            value={
+                              machineDraft.manufacturer
+                            }
+                            onChange={(event) =>
+                              updateMachineDraft(
+                                "manufacturer",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="Bambu Lab"
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
+                          />
+                        </label>
 
-                    <label className="block">
-                      <span className="mb-2 block text-xs font-medium text-zinc-400">
-                        Serial Number
-                      </span>
-                      <input
-                        value={machineDraft.serialNumber ?? ""}
-                        onChange={(event) =>
-                          updateMachineDraft("serialNumber", event.target.value)
-                        }
-                        placeholder="Serial number"
-                        className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
-                      />
-                    </label>
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Model
+                          </span>
 
-                    <label className="block">
-                      <span className="mb-2 block text-xs font-medium text-zinc-400">
-                        IP Address
-                      </span>
-                      <input
-                        value={machineDraft.ipAddress ?? ""}
-                        onChange={(event) =>
-                          updateMachineDraft("ipAddress", event.target.value)
-                        }
-                        placeholder="192.168.1.100"
-                        className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
-                      />
-                    </label>
-                  </div>
+                          <input
+                            value={
+                              machineDraft.model
+                            }
+                            onChange={(event) =>
+                              updateMachineDraft(
+                                "model",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="X2D"
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
+                          />
+                        </label>
 
-                  <div className="mt-5">
-                    <span className="mb-2 block text-xs font-medium text-zinc-400">
-                      Build Volume (mm)
-                    </span>
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Machine Type
+                          </span>
 
-                    <div className="grid grid-cols-3 gap-3">
-                      {(["buildVolumeX", "buildVolumeY", "buildVolumeZ"] as const).map(
-                        (field, index) => (
-                          <label key={field} className="block">
+                          <select
+                            value={
+                              machineDraft.type
+                            }
+                            onChange={(event) =>
+                              updateMachineDraft(
+                                "type",
+                                event.target.value as MachineType,
+                              )
+                            }
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
+                          >
+                            <option value="FDM / FFF">
+                              FDM / FFF
+                            </option>
+
+                            <option value="Resin">
+                              Resin
+                            </option>
+
+                            <option value="Laser">
+                              Laser
+                            </option>
+
+                            <option value="CNC">
+                              CNC
+                            </option>
+
+                            <option value="Other">
+                              Other
+                            </option>
+                          </select>
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Status
+                          </span>
+
+                          <select
+                            value={
+                              machineDraft.status
+                            }
+                            onChange={(event) =>
+                              updateMachineDraft(
+                                "status",
+                                event.target.value as Machine["status"],
+                              )
+                            }
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
+                          >
+                            <option value="Ready">
+                              Ready
+                            </option>
+
+                            <option value="Busy">
+                              Busy
+                            </option>
+
+                            <option value="Maintenance">
+                              Maintenance
+                            </option>
+
+                            <option value="Offline">
+                              Offline
+                            </option>
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* ----------------------------------------------
+                 * SPECIFICATIONS
+                 * ---------------------------------------------- */}
+
+                    <div className="mt-7 border-t border-white/10 pt-6">
+                      <h4 className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                        Specifications
+                      </h4>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Nozzle Size (mm)
+                          </span>
+
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={
+                              machineDraft.nozzleSize ??
+                              ""
+                            }
+                            onChange={(event) =>
+                              updateMachineDraft(
+                                "nozzleSize",
+                                event.target.value === ""
+                                  ? undefined
+                                  : Number(
+                                    event.target.value,
+                                  ),
+                              )
+                            }
+                            placeholder="0.4"
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
+                          />
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Serial Number
+                          </span>
+
+                          <input
+                            value={
+                              machineDraft.serialNumber ??
+                              ""
+                            }
+                            onChange={(event) =>
+                              updateMachineDraft(
+                                "serialNumber",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="Serial number"
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="mt-5">
+                        <span className="mb-2 block text-xs font-medium text-zinc-400">
+                          Build Volume (mm)
+                        </span>
+
+                        <div className="grid grid-cols-3 gap-3">
+                          <label className="block">
                             <span className="mb-1 block text-[10px] text-zinc-500">
-                              {["X", "Y", "Z"][index]}
+                              X
                             </span>
+
                             <input
                               type="number"
                               min="0"
-                              value={machineDraft[field] ?? ""}
+                              value={
+                                machineDraft.buildVolumeX ??
+                                ""
+                              }
                               onChange={(event) =>
                                 updateMachineDraft(
-                                  field,
+                                  "buildVolumeX",
                                   event.target.value === ""
                                     ? undefined
-                                    : Number(event.target.value),
+                                    : Number(
+                                      event.target.value,
+                                    ),
                                 )
                               }
-                              placeholder={["X", "Y", "Z"][index]}
+                              placeholder="X"
                               className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
                             />
                           </label>
-                        ),
-                      )}
+
+                          <label className="block">
+                            <span className="mb-1 block text-[10px] text-zinc-500">
+                              Y
+                            </span>
+
+                            <input
+                              type="number"
+                              min="0"
+                              value={
+                                machineDraft.buildVolumeY ??
+                                ""
+                              }
+                              onChange={(event) =>
+                                updateMachineDraft(
+                                  "buildVolumeY",
+                                  event.target.value === ""
+                                    ? undefined
+                                    : Number(
+                                      event.target.value,
+                                    ),
+                                )
+                              }
+                              placeholder="Y"
+                              className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
+                            />
+                          </label>
+
+                          <label className="block">
+                            <span className="mb-1 block text-[10px] text-zinc-500">
+                              Z
+                            </span>
+
+                            <input
+                              type="number"
+                              min="0"
+                              value={
+                                machineDraft.buildVolumeZ ??
+                                ""
+                              }
+                              onChange={(event) =>
+                                updateMachineDraft(
+                                  "buildVolumeZ",
+                                  event.target.value === ""
+                                    ? undefined
+                                    : Number(
+                                      event.target.value,
+                                    ),
+                                )
+                              }
+                              placeholder="Z"
+                              className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ----------------------------------------------
+                 * MACHINE CONFIGURATION
+                 * ---------------------------------------------- */}
+
+                    <div className="mt-7 border-t border-white/10 pt-6">
+                      <h4 className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                        Machine Configuration
+                      </h4>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Build Plate
+                          </span>
+
+                          <input
+                            value={
+                              machineDraft.buildPlate ??
+                              ""
+                            }
+                            onChange={(event) =>
+                              updateMachineDraft(
+                                "buildPlate",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="Textured PEI"
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
+                          />
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Material System
+                          </span>
+
+                          <select
+                            value={
+                              machineDraft.materialSystem ??
+                              "None"
+                            }
+                            onChange={(event) =>
+                              updateMachineDraft(
+                                "materialSystem",
+                                event.target.value as MaterialSystem,
+                              )
+                            }
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
+                          >
+                            <option value="None">
+                              None
+                            </option>
+
+                            <option value="AMS">
+                              AMS
+                            </option>
+
+                            <option value="AMS HT">
+                              AMS HT
+                            </option>
+
+                            <option value="Other">
+                              Other
+                            </option>
+                          </select>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* ----------------------------------------------
+                 * CONNECTION
+                 * ---------------------------------------------- */}
+
+                    <div className="mt-7 border-t border-white/10 pt-6">
+                      <h4 className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                        Connection
+                      </h4>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Connection Type
+                          </span>
+
+                          <select
+                            value={
+                              machineDraft.connectionType ??
+                              "Manual"
+                            }
+                            onChange={(event) =>
+                              updateMachineDraft(
+                                "connectionType",
+                                event.target.value as ConnectionType,
+                              )
+                            }
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
+                          >
+                            <option value="Local Network">
+                              Local Network
+                            </option>
+
+                            <option value="Cloud">
+                              Cloud
+                            </option>
+
+                            <option value="USB">
+                              USB
+                            </option>
+
+                            <option value="Manual">
+                              Manual
+                            </option>
+                          </select>
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Hostname
+                          </span>
+
+                          <input
+                            value={
+                              machineDraft.hostname ??
+                              ""
+                            }
+                            onChange={(event) =>
+                              updateMachineDraft(
+                                "hostname",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="alpha-prime.local"
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
+                          />
+                        </label>
+
+                        <label className="block md:col-span-2">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            IP Address
+                          </span>
+
+                          <input
+                            value={
+                              machineDraft.ipAddress ??
+                              ""
+                            }
+                            onChange={(event) =>
+                              updateMachineDraft(
+                                "ipAddress",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="192.168.1.100"
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* ----------------------------------------------
+                 * NOTES
+                 * ---------------------------------------------- */}
+
+                    <div className="mt-7 border-t border-white/10 pt-6">
+                      <label className="block">
+                        <span className="mb-2 block text-xs font-medium text-zinc-400">
+                          Notes
+                        </span>
+
+                        <textarea
+                          rows={5}
+                          value={
+                            machineDraft.notes ??
+                            ""
+                          }
+                          onChange={(event) =>
+                            updateMachineDraft(
+                              "notes",
+                              event.target.value,
+                            )
+                          }
+                          placeholder="Maintenance notes, configuration details, accessories, or other machine information..."
+                          className="w-full resize-y rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
+                        />
+                      </label>
                     </div>
                   </div>
 
-                  <label className="mt-5 block">
-                    <span className="mb-2 block text-xs font-medium text-zinc-400">
-                      Notes
-                    </span>
-                    <textarea
-                      rows={5}
-                      value={machineDraft.notes ?? ""}
-                      onChange={(event) =>
-                        updateMachineDraft("notes", event.target.value)
+                  {/* ------------------------------------------------
+               * MODAL FOOTER
+               * ------------------------------------------------ */}
+
+                  <div className="flex items-center justify-end gap-2 border-t border-white/10 px-5 py-4">
+                    <button
+                      type="button"
+                      onClick={
+                        cancelEditMachine
                       }
-                      placeholder="Maintenance notes, configuration details, accessories, or other machine information..."
-                      className="w-full resize-y rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60"
-                    />
-                  </label>
-                </div>
+                      disabled={
+                        savingMachine
+                      }
+                      className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-400 transition hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      Cancel
+                    </button>
 
-                <div className="flex items-center justify-end gap-2 border-t border-white/10 px-5 py-4">
-                  <button
-                    type="button"
-                    onClick={cancelEditMachine}
-                    disabled={savingMachine}
-                    className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-400 transition hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    Cancel
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => void saveMachineChanges()}
-                    disabled={
-                      savingMachine ||
-                      !machineDraft.name.trim() ||
-                      !machineDraft.manufacturer.trim() ||
-                      !machineDraft.model.trim()
-                    }
-                    className="rounded-lg bg-red-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40"
-                  >
-                    {savingMachine ? "Saving..." : "Save Changes"}
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void saveMachineChanges()
+                      }
+                      disabled={
+                        savingMachine ||
+                        !machineDraft.name.trim() ||
+                        !machineDraft.manufacturer.trim() ||
+                        !machineDraft.model.trim()
+                      }
+                      className="rounded-lg bg-red-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {savingMachine
+                        ? "Saving..."
+                        : "Save Changes"}
+                    </button>
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            )}
         </section>
       );
     }
@@ -2350,6 +3135,673 @@ function App() {
           }
           onOpenMachine={
             handleOpenMachine
+          }
+        />
+      );
+    }
+
+    if (
+      activeSection ===
+      "Material Detail" &&
+      selectedMaterial
+    ) {
+      const materialPercentage =
+        getMaterialRemainingPercentage(
+          selectedMaterial,
+        );
+
+      const materialInventoryStatus =
+        getMaterialInventoryStatus(
+          selectedMaterial,
+        );
+
+      return (
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+            <div className="flex items-center">
+              <button
+                type="button"
+                onClick={() =>
+                  handleSectionChange(
+                    "Materials",
+                  )
+                }
+                className="text-xs text-zinc-400 transition hover:text-white"
+              >
+                ← Materials
+              </button>
+
+              <div className="ml-3">
+                <h2 className="text-sm font-semibold text-zinc-100">
+                  {
+                    selectedMaterial.name
+                  }
+                </h2>
+
+                <p className="mt-1 text-xs text-zinc-500">
+                  {
+                    selectedMaterial.brand
+                  }
+                  {" · "}
+                  {
+                    selectedMaterial.materialType
+                  }
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={
+                beginEditMaterial
+              }
+              className="rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-medium text-zinc-200 transition hover:border-red-500/40 hover:bg-red-500/10 hover:text-white"
+            >
+              Edit Material
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-6">
+            <div className="grid gap-4 xl:grid-cols-2">
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-5">
+                <h3 className="text-sm font-semibold text-zinc-100">
+                  Material Information
+                </h3>
+
+                <div className="mt-4 space-y-3 text-sm">
+                  <DetailRow label="Name" value={selectedMaterial.name} />
+                  <DetailRow label="Brand" value={selectedMaterial.brand} />
+                  <DetailRow label="Category" value={selectedMaterial.category} />
+                  <DetailRow label="Material Type" value={selectedMaterial.materialType} />
+                  <DetailRow label="Color" value={selectedMaterial.color ?? "Not set"} />
+                  <DetailRow
+                    label="Diameter"
+                    value={
+                      selectedMaterial.diameter !== undefined
+                        ? `${selectedMaterial.diameter} mm`
+                        : "Not set"
+                    }
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-5">
+                <h3 className="text-sm font-semibold text-zinc-100">
+                  Inventory
+                </h3>
+
+                <div className="mt-4 space-y-3 text-sm">
+                  <DetailRow
+                    label="Initial Weight"
+                    value={
+                      selectedMaterial.initialWeightGrams !== undefined
+                        ? `${selectedMaterial.initialWeightGrams} g`
+                        : "Not set"
+                    }
+                  />
+
+                  <DetailRow
+                    label="Remaining Weight"
+                    value={
+                      selectedMaterial.remainingWeightGrams !== undefined
+                        ? `${selectedMaterial.remainingWeightGrams} g`
+                        : "Not set"
+                    }
+                  />
+
+                  <DetailRow
+                    label="Cost"
+                    value={
+                      selectedMaterial.cost !== undefined
+                        ? `$${selectedMaterial.cost.toFixed(2)}`
+                        : "Not set"
+                    }
+                  />
+
+                  <DetailRow
+                    label="Storage Location"
+                    value={
+                      selectedMaterial.storageLocation ??
+                      "Not set"
+                    }
+                  />
+
+                  <div className="mt-5 border-t border-white/10 pt-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-xs text-zinc-500">
+                        Inventory Status
+                      </span>
+
+                      <span
+                        className={`rounded-md border px-2 py-1 text-[10px] font-medium ${getMaterialInventoryStatusClasses(
+                          materialInventoryStatus,
+                        )}`}
+                      >
+                        {
+                          materialInventoryStatus
+                        }
+                      </span>
+                    </div>
+
+                    <div className="mt-4">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-xs text-zinc-500">
+                          Remaining
+                        </span>
+
+                        <span className="text-xs font-medium text-zinc-300">
+                          {materialPercentage !==
+                            null
+                            ? `${Math.round(
+                              materialPercentage,
+                            )}%`
+                            : "Not set"}
+                        </span>
+                      </div>
+
+                      <div className="h-2 overflow-hidden rounded-full bg-white/[0.06]">
+                        <div
+                          className={`h-full rounded-full transition-all ${getMaterialProgressBarClasses(
+                            materialInventoryStatus,
+                          )}`}
+                          style={{
+                            width:
+                              materialPercentage !==
+                                null
+                                ? `${materialPercentage}%`
+                                : "0%",
+                          }}
+                        />
+                      </div>
+
+                      {materialInventoryStatus ===
+                        "Low" && (
+                          <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-400">
+                            Low material warning: this spool has 20% or less remaining.
+                          </div>
+                        )}
+
+                      {materialInventoryStatus ===
+                        "Empty" && (
+                          <div className="mt-3 rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+                            This material is empty.
+                          </div>
+                        )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-5">
+                <h3 className="text-sm font-semibold text-zinc-100">
+                  Drying
+                </h3>
+
+                <div className="mt-4 space-y-3 text-sm">
+                  <DetailRow
+                    label="Drying Status"
+                    value={selectedMaterial.dryingStatus}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-5">
+                <h3 className="text-sm font-semibold text-zinc-100">
+                  Color
+                </h3>
+
+                <div className="mt-4 space-y-3 text-sm">
+                  <DetailRow
+                    label="Color Name"
+                    value={selectedMaterial.color ?? "Not set"}
+                  />
+                  <DetailRow
+                    label="Hex"
+                    value={selectedMaterial.colorHex ?? "Not set"}
+                  />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-5 xl:col-span-2">
+                <h3 className="text-sm font-semibold text-zinc-100">
+                  Notes
+                </h3>
+
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-zinc-400">
+                  {selectedMaterial.notes ?? "No notes added."}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {editingMaterial &&
+            materialDraft && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
+                <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-white/10 bg-zinc-950 shadow-2xl">
+                  <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-zinc-100">
+                        Edit Material
+                      </h3>
+
+                      <p className="mt-1 text-xs text-zinc-500">
+                        Update material information and inventory.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={
+                        cancelEditMaterial
+                      }
+                      className="text-xl leading-none text-zinc-500 transition hover:text-white"
+                    >
+                      ×
+                    </button>
+                  </div>
+
+                  <div className="min-h-0 flex-1 overflow-y-auto p-5">
+                    <div>
+                      <h4 className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                        Material Information
+                      </h4>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Material Name
+                          </span>
+
+                          <input
+                            autoFocus
+                            value={
+                              materialDraft.name
+                            }
+                            onChange={(event) =>
+                              updateMaterialDraft(
+                                "name",
+                                event.target.value,
+                              )
+                            }
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
+                          />
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Brand
+                          </span>
+
+                          <input
+                            value={
+                              materialDraft.brand
+                            }
+                            onChange={(event) =>
+                              updateMaterialDraft(
+                                "brand",
+                                event.target.value,
+                              )
+                            }
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
+                          />
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Category
+                          </span>
+
+                          <select
+                            value={
+                              materialDraft.category
+                            }
+                            onChange={(event) =>
+                              updateMaterialDraft(
+                                "category",
+                                event.target.value as MaterialCategory,
+                              )
+                            }
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
+                          >
+                            <option value="Filament">
+                              Filament
+                            </option>
+                            <option value="Resin">
+                              Resin
+                            </option>
+                            <option value="Sheet">
+                              Sheet
+                            </option>
+                            <option value="Powder">
+                              Powder
+                            </option>
+                            <option value="Other">
+                              Other
+                            </option>
+                          </select>
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Material Type
+                          </span>
+
+                          <input
+                            value={
+                              materialDraft.materialType
+                            }
+                            onChange={(event) =>
+                              updateMaterialDraft(
+                                "materialType",
+                                event.target.value,
+                              )
+                            }
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
+                          />
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Color
+                          </span>
+
+                          <input
+                            value={
+                              materialDraft.color ??
+                              ""
+                            }
+                            onChange={(event) =>
+                              updateMaterialDraft(
+                                "color",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="Black"
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
+                          />
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Color Hex
+                          </span>
+
+                          <input
+                            value={
+                              materialDraft.colorHex ??
+                              ""
+                            }
+                            onChange={(event) =>
+                              updateMaterialDraft(
+                                "colorHex",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="#000000"
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
+                          />
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Diameter (mm)
+                          </span>
+
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={
+                              materialDraft.diameter ??
+                              ""
+                            }
+                            onChange={(event) =>
+                              updateMaterialDraft(
+                                "diameter",
+                                event.target.value === ""
+                                  ? undefined
+                                  : Number(
+                                    event.target.value,
+                                  ),
+                              )
+                            }
+                            placeholder="1.75"
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="mt-7 border-t border-white/10 pt-6">
+                      <h4 className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                        Inventory
+                      </h4>
+
+                      <div className="grid gap-4 md:grid-cols-2">
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Initial Weight (g)
+                          </span>
+
+                          <input
+                            type="number"
+                            min="0"
+                            value={
+                              materialDraft.initialWeightGrams ??
+                              ""
+                            }
+                            onChange={(event) =>
+                              updateMaterialDraft(
+                                "initialWeightGrams",
+                                event.target.value === ""
+                                  ? undefined
+                                  : Number(
+                                    event.target.value,
+                                  ),
+                              )
+                            }
+                            placeholder="1000"
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
+                          />
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Remaining Weight (g)
+                          </span>
+
+                          <input
+                            type="number"
+                            min="0"
+                            value={
+                              materialDraft.remainingWeightGrams ??
+                              ""
+                            }
+                            onChange={(event) =>
+                              updateMaterialDraft(
+                                "remainingWeightGrams",
+                                event.target.value === ""
+                                  ? undefined
+                                  : Number(
+                                    event.target.value,
+                                  ),
+                              )
+                            }
+                            placeholder="1000"
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
+                          />
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Cost
+                          </span>
+
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={
+                              materialDraft.cost ??
+                              ""
+                            }
+                            onChange={(event) =>
+                              updateMaterialDraft(
+                                "cost",
+                                event.target.value === ""
+                                  ? undefined
+                                  : Number(
+                                    event.target.value,
+                                  ),
+                              )
+                            }
+                            placeholder="24.99"
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
+                          />
+                        </label>
+
+                        <label className="block">
+                          <span className="mb-2 block text-xs font-medium text-zinc-400">
+                            Storage Location
+                          </span>
+
+                          <input
+                            value={
+                              materialDraft.storageLocation ??
+                              ""
+                            }
+                            onChange={(event) =>
+                              updateMaterialDraft(
+                                "storageLocation",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="AMS HT"
+                            className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="mt-7 border-t border-white/10 pt-6">
+                      <h4 className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-500">
+                        Drying
+                      </h4>
+
+                      <label className="block">
+                        <span className="mb-2 block text-xs font-medium text-zinc-400">
+                          Drying Status
+                        </span>
+
+                        <select
+                          value={
+                            materialDraft.dryingStatus
+                          }
+                          onChange={(event) =>
+                            updateMaterialDraft(
+                              "dryingStatus",
+                              event.target.value as MaterialDryingStatus,
+                            )
+                          }
+                          className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
+                        >
+                          <option value="Dry">
+                            Dry
+                          </option>
+                          <option value="Needs Drying">
+                            Needs Drying
+                          </option>
+                          <option value="Drying">
+                            Drying
+                          </option>
+                          <option value="Unknown">
+                            Unknown
+                          </option>
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="mt-7 border-t border-white/10 pt-6">
+                      <label className="block">
+                        <span className="mb-2 block text-xs font-medium text-zinc-400">
+                          Notes
+                        </span>
+
+                        <textarea
+                          rows={5}
+                          value={
+                            materialDraft.notes ??
+                            ""
+                          }
+                          onChange={(event) =>
+                            updateMaterialDraft(
+                              "notes",
+                              event.target.value,
+                            )
+                          }
+                          placeholder="Storage, drying, print settings, or other material notes..."
+                          className="w-full resize-y rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 border-t border-white/10 px-5 py-4">
+                    <button
+                      type="button"
+                      onClick={
+                        cancelEditMaterial
+                      }
+                      disabled={
+                        savingMaterial
+                      }
+                      className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-400 transition hover:bg-white/5 hover:text-white disabled:opacity-40"
+                    >
+                      Cancel
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        void saveMaterialChanges()
+                      }
+                      disabled={
+                        savingMaterial ||
+                        !materialDraft.name.trim() ||
+                        !materialDraft.brand.trim() ||
+                        !materialDraft.materialType.trim()
+                      }
+                      className="rounded-lg bg-red-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      {savingMaterial
+                        ? "Saving..."
+                        : "Save Changes"}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+        </section>
+      );
+    }
+
+    if (
+      activeSection ===
+      "Materials"
+    ) {
+      return (
+        <MaterialsPage
+          materials={
+            materials
+          }
+          onCreateMaterial={
+            handleCreateMaterial
+          }
+          onDeleteMaterial={
+            handleDeleteMaterial
+          }
+          onOpenMaterial={
+            handleOpenMaterial
           }
         />
       );
