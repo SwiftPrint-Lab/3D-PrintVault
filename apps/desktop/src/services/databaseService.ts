@@ -227,6 +227,60 @@ export async function getDatabase() {
       )
     `);
 
+        await db.execute(`
+    CREATE TABLE IF NOT EXISTS jobs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+        name TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'Queued',
+
+        asset_id INTEGER,
+        machine_id INTEGER,
+        material_id INTEGER,
+
+        quantity INTEGER NOT NULL DEFAULT 1,
+
+        estimated_minutes REAL,
+        actual_minutes REAL,
+
+        material_usage_grams REAL,
+
+        notes TEXT,
+
+        material_deducted INTEGER NOT NULL DEFAULT 0,
+
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+
+        FOREIGN KEY (asset_id)
+            REFERENCES assets(id)
+            ON DELETE SET NULL,
+
+        FOREIGN KEY (machine_id)
+            REFERENCES machines(id)
+            ON DELETE SET NULL,
+
+        FOREIGN KEY (material_id)
+            REFERENCES materials(id)
+            ON DELETE SET NULL
+    )
+`);
+
+        /*
+         * Existing jobs migration.
+         * Adds double-deduction protection to databases
+         * created before material_deducted existed.
+         */
+
+        try {
+            await db.execute(`
+        ALTER TABLE jobs
+        ADD COLUMN material_deducted INTEGER NOT NULL DEFAULT 0
+      `);
+        } catch {
+            // Column already exists.
+        }
+
         try {
             await db.execute(`
     ALTER TABLE machines
@@ -2169,6 +2223,318 @@ export async function deleteMaterial(
     DELETE FROM materials
     WHERE id = ?
     `,
+        [
+            id,
+        ],
+    );
+}
+
+export type JobStatus =
+    | "Queued"
+    | "Preparing"
+    | "Printing"
+    | "Paused"
+    | "Completed"
+    | "Failed"
+    | "Cancelled";
+
+export interface Job {
+    id: number;
+
+    name: string;
+    status: JobStatus;
+
+    assetId?: number;
+    machineId?: number;
+    materialId?: number;
+
+    quantity: number;
+
+    estimatedMinutes?: number;
+    actualMinutes?: number;
+
+    materialUsageGrams?: number;
+
+    notes?: string;
+
+    materialDeducted: boolean;
+
+    createdAt: string;
+    updatedAt: string;
+}
+
+export async function createJob(
+    name: string,
+): Promise<Job> {
+    const database =
+        await getDatabase();
+
+    const trimmedName =
+        name.trim();
+
+    if (!trimmedName) {
+        throw new Error(
+            "Job name cannot be empty.",
+        );
+    }
+
+    const now =
+        new Date().toISOString();
+
+    const result =
+        await database.execute(
+            `
+            INSERT INTO jobs (
+                name,
+                status,
+                quantity,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            `,
+            [
+                trimmedName,
+                "Queued",
+                1,
+                now,
+                now,
+            ],
+        );
+
+    return {
+        id: Number(
+            result.lastInsertId,
+        ),
+
+        name:
+            trimmedName,
+
+        status:
+            "Queued",
+
+        quantity:
+            1,
+
+        materialDeducted:
+            false,
+
+        createdAt:
+            now,
+
+        updatedAt:
+            now,
+    };
+}
+
+export async function loadJobs(): Promise<
+    Job[]
+> {
+    const database =
+        await getDatabase();
+
+    const rows =
+        await database.select<
+            {
+                id: number;
+
+                name: string;
+                status: JobStatus;
+
+                asset_id: number | null;
+                machine_id: number | null;
+                material_id: number | null;
+
+                quantity: number;
+
+                estimated_minutes:
+                number | null;
+
+                actual_minutes:
+                number | null;
+
+                material_usage_grams:
+                number | null;
+
+                notes:
+                string | null;
+
+                material_deducted:
+                number;
+
+                created_at: string;
+                updated_at: string;
+            }[]
+        >(
+            `
+            SELECT
+                id,
+                name,
+                status,
+                asset_id,
+                machine_id,
+                material_id,
+                quantity,
+                estimated_minutes,
+                actual_minutes,
+                material_usage_grams,
+                notes,
+                material_deducted,
+                created_at,
+                updated_at
+            FROM jobs
+            ORDER BY created_at DESC
+            `,
+        );
+
+    return rows.map(
+        (row) => ({
+            id:
+                row.id,
+
+            name:
+                row.name,
+
+            status:
+                row.status,
+
+            assetId:
+                row.asset_id ??
+                undefined,
+
+            machineId:
+                row.machine_id ??
+                undefined,
+
+            materialId:
+                row.material_id ??
+                undefined,
+
+            quantity:
+                row.quantity,
+
+            estimatedMinutes:
+                row.estimated_minutes ??
+                undefined,
+
+            actualMinutes:
+                row.actual_minutes ??
+                undefined,
+
+            materialUsageGrams:
+                row.material_usage_grams ??
+                undefined,
+
+            notes:
+                row.notes ??
+                undefined,
+
+            materialDeducted:
+                row.material_deducted === 1,
+
+            createdAt:
+                row.created_at,
+
+            updatedAt:
+                row.updated_at,
+        }),
+    );
+}
+
+export async function updateJob(
+    job: Job,
+): Promise<void> {
+    const database =
+        await getDatabase();
+
+    const trimmedName =
+        job.name.trim();
+
+    if (!trimmedName) {
+        throw new Error(
+            "Job name cannot be empty.",
+        );
+    }
+
+    if (
+        !Number.isInteger(
+            job.quantity,
+        ) ||
+        job.quantity < 1
+    ) {
+        throw new Error(
+            "Job quantity must be at least 1.",
+        );
+    }
+
+    await database.execute(
+        `
+        UPDATE jobs
+        SET
+            name = ?,
+            status = ?,
+            asset_id = ?,
+            machine_id = ?,
+            material_id = ?,
+            quantity = ?,
+            estimated_minutes = ?,
+            actual_minutes = ?,
+            material_usage_grams = ?,
+            notes = ?,
+            material_deducted = ?,
+            updated_at = ?
+        WHERE id = ?
+        `,
+        [
+            trimmedName,
+
+            job.status,
+
+            job.assetId ??
+            null,
+
+            job.machineId ??
+            null,
+
+            job.materialId ??
+            null,
+
+            job.quantity,
+
+            job.estimatedMinutes ??
+            null,
+
+            job.actualMinutes ??
+            null,
+
+            job.materialUsageGrams ??
+            null,
+
+            job.notes?.trim() ||
+            null,
+
+            job.materialDeducted
+                ? 1
+                : 0,
+
+            new Date().toISOString(),
+
+            job.id,
+        ],
+    );
+}
+
+export async function deleteJob(
+    id: number,
+): Promise<void> {
+    const database =
+        await getDatabase();
+
+    await database.execute(
+        `
+        DELETE FROM jobs
+        WHERE id = ?
+        `,
         [
             id,
         ],

@@ -54,6 +54,10 @@ import {
   deleteMaterial,
   loadMaterials,
   updateMaterial,
+  createJob,
+  deleteJob,
+  loadJobs,
+  updateJob,
   type Collection,
   type Project,
   type ProjectStatus,
@@ -64,6 +68,8 @@ import {
   type Material,
   type MaterialCategory,
   type MaterialDryingStatus,
+  type Job,
+  type JobStatus,
 } from "./services/databaseService";
 
 import { MachinesPage } from "./features/machines/components/MachinesPage";
@@ -75,6 +81,9 @@ import {
   getMaterialProgressBarClasses,
   getMaterialRemainingPercentage,
 } from "./features/materials/utils/materialInventory";
+import { JobsPage } from "./features/jobs/components/JobsPage";
+import { AutomationPage } from "./features/automation/components/AutomationPage";
+import { IntegrationsPage } from "./features/integrations/components/IntegrationsPage";
 
 function App() {
   /*
@@ -249,6 +258,35 @@ function App() {
     setSavingMaterial,
   ] = useState(false);
 
+  const [
+    jobs,
+    setJobs,
+  ] = useState<Job[]>([]);
+
+  const [
+    selectedJob,
+    setSelectedJob,
+  ] = useState<Job | null>(
+    null,
+  );
+
+  const [
+    editingJob,
+    setEditingJob,
+  ] = useState(false);
+
+  const [
+    jobDraft,
+    setJobDraft,
+  ] = useState<Job | null>(
+    null,
+  );
+
+  const [
+    savingJob,
+    setSavingJob,
+  ] = useState(false);
+
   /*
    * ---------------------------------------------------------
    * FILTER ASSETS
@@ -410,6 +448,7 @@ function App() {
           savedProjects,
           savedMachines,
           savedMaterials,
+          savedJobs,
         ] =
           await Promise.all([
             loadAssets(),
@@ -417,6 +456,7 @@ function App() {
             loadProjects(),
             loadMachines(),
             loadMaterials(),
+            loadJobs(),
           ]);
 
         setAssets(
@@ -437,6 +477,10 @@ function App() {
 
         setMaterials(
           savedMaterials,
+        );
+
+        setJobs(
+          savedJobs,
         );
 
         if (
@@ -462,6 +506,7 @@ function App() {
         setProjects([]);
         setMachines([]);
         setMaterials([]);
+        setJobs([]);
 
         setSelectedAsset(
           null,
@@ -1956,6 +2001,28 @@ function App() {
       );
     }
 
+    /*
+     * Leave job-detail state
+     * when navigating somewhere else.
+     */
+
+    if (
+      section !==
+      "Job Detail"
+    ) {
+      setSelectedJob(
+        null,
+      );
+
+      setEditingJob(
+        false,
+      );
+
+      setJobDraft(
+        null,
+      );
+    }
+
     if (
       section ===
       "Library" ||
@@ -1970,7 +2037,9 @@ function App() {
       section ===
       "Machines" ||
       section ===
-      "Materials"
+      "Materials" ||
+      section ===
+      "Jobs"
     ) {
       setTechnologyFilter(
         "All Assets",
@@ -2198,6 +2267,550 @@ function App() {
         false,
       );
     }
+  }
+
+  async function handleCreateJob(
+    name: string,
+  ): Promise<Job | null> {
+    try {
+      const job =
+        await createJob(
+          name,
+        );
+
+      const refreshedJobs =
+        await loadJobs();
+
+      setJobs(
+        refreshedJobs,
+      );
+
+      return job;
+    } catch (error) {
+      console.error(
+        "Failed to create job:",
+        error,
+      );
+
+      alert(
+        `Unable to create job: ${String(error)}`,
+      );
+
+      return null;
+    }
+  }
+
+  async function handleDeleteJob(
+    job: Job,
+  ): Promise<void> {
+    const confirmed =
+      window.confirm(
+        `Delete job "${job.name}"?`,
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await deleteJob(
+        job.id,
+      );
+
+      const refreshedJobs =
+        await loadJobs();
+
+      setJobs(
+        refreshedJobs,
+      );
+
+      if (
+        selectedJob?.id ===
+        job.id
+      ) {
+        setSelectedJob(
+          null,
+        );
+
+        setActiveSection(
+          "Jobs",
+        );
+      }
+    } catch (error) {
+      console.error(
+        "Failed to delete job:",
+        error,
+      );
+
+      alert(
+        `Unable to delete job: ${String(error)}`,
+      );
+    }
+  }
+
+  function handleOpenJob(
+    job: Job,
+  ) {
+    setSelectedJob(
+      job,
+    );
+
+    setActiveSection(
+      "Job Detail",
+    );
+  }
+
+  async function synchronizeJobMachines(
+    previousJob: Job,
+    updatedJob: Job,
+    refreshedJobs: Job[],
+  ): Promise<void> {
+    const affectedMachineIds =
+      new Set<number>();
+
+    if (
+      previousJob.machineId !==
+      undefined
+    ) {
+      affectedMachineIds.add(
+        previousJob.machineId,
+      );
+    }
+
+    if (
+      updatedJob.machineId !==
+      undefined
+    ) {
+      affectedMachineIds.add(
+        updatedJob.machineId,
+      );
+    }
+
+    if (
+      affectedMachineIds.size ===
+      0
+    ) {
+      return;
+    }
+
+    for (
+      const machineId
+      of affectedMachineIds
+    ) {
+      const machine =
+        machines.find(
+          (item) =>
+            item.id ===
+            machineId,
+        );
+
+      if (!machine) {
+        continue;
+      }
+
+      const hasActivePrintingJob =
+        refreshedJobs.some(
+          (job) =>
+            job.machineId ===
+            machineId &&
+            job.status ===
+            "Printing",
+        );
+
+      /*
+       * A machine with at least one active
+       * Printing job must be Busy.
+       */
+
+      if (
+        hasActivePrintingJob
+      ) {
+        if (
+          machine.status !==
+          "Busy"
+        ) {
+          await updateMachine({
+            ...machine,
+            status:
+              "Busy",
+          });
+        }
+
+        continue;
+      }
+
+      /*
+       * Only automatically return a machine
+       * to Ready if it is currently Busy.
+       *
+       * This prevents us from overriding
+       * Maintenance or Offline manually.
+       */
+
+      if (
+        machine.status ===
+        "Busy"
+      ) {
+        await updateMachine({
+          ...machine,
+          status:
+            "Ready",
+        });
+      }
+    }
+
+    /*
+     * Refresh machine state after all
+     * automation updates.
+     */
+
+    const refreshedMachines =
+      await loadMachines();
+
+    setMachines(
+      refreshedMachines,
+    );
+
+    /*
+     * Keep Machine Detail synchronized if
+     * one happens to be selected.
+     */
+
+    if (selectedMachine) {
+      const refreshedSelectedMachine =
+        refreshedMachines.find(
+          (machine) =>
+            machine.id ===
+            selectedMachine.id,
+        );
+
+      if (
+        refreshedSelectedMachine
+      ) {
+        setSelectedMachine(
+          refreshedSelectedMachine,
+        );
+      }
+    }
+  }
+
+  async function handleUpdateJob(
+    job: Job,
+    previousJob: Job,
+  ): Promise<void> {
+    try {
+      /*
+       * Save the job first.
+       */
+
+      await updateJob(
+        job,
+      );
+
+      /*
+       * Reload the persisted job.
+       */
+
+      const refreshedJobs =
+        await loadJobs();
+
+      const updatedJob =
+        refreshedJobs.find(
+          (item) =>
+            item.id ===
+            job.id,
+        );
+
+      if (!updatedJob) {
+        throw new Error(
+          "Updated job could not be reloaded.",
+        );
+      }
+
+      /*
+       * Apply completed-job material
+       * deduction if necessary.
+       */
+
+      const finalizedJob =
+        await applyCompletedJobMaterialUsage(
+          previousJob,
+          updatedJob,
+        );
+
+      /*
+       * Reload Jobs again because the
+       * material automation may have changed
+       * materialDeducted in the database.
+       */
+
+      const finalJobs =
+        await loadJobs();
+
+      setJobs(
+        finalJobs,
+      );
+
+      const finalSelectedJob =
+        finalJobs.find(
+          (item) =>
+            item.id ===
+            finalizedJob.id,
+        );
+
+      if (finalSelectedJob) {
+        setSelectedJob(
+          finalSelectedJob,
+        );
+      } else {
+        setSelectedJob(
+          finalizedJob,
+        );
+      }
+
+      /*
+       * Synchronize the assigned machine
+       * exactly once using final job state.
+       */
+
+      await synchronizeJobMachines(
+        previousJob,
+        finalizedJob,
+        finalJobs,
+      );
+    } catch (error) {
+      console.error(
+        "Failed to update job:",
+        error,
+      );
+
+      alert(
+        `Unable to update job: ${String(error)}`,
+      );
+
+      throw error;
+    }
+  }
+  function beginEditJob() {
+    if (!selectedJob) {
+      return;
+    }
+
+    setJobDraft({
+      ...selectedJob,
+    });
+
+    setEditingJob(
+      true,
+    );
+  }
+
+  function cancelEditJob() {
+    setEditingJob(
+      false,
+    );
+
+    setJobDraft(
+      null,
+    );
+  }
+
+  function updateJobDraft<
+    K extends keyof Job
+  >(
+    field: K,
+    value: Job[K],
+  ) {
+    setJobDraft(
+      (current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          [field]: value,
+        };
+      },
+    );
+  }
+
+  async function saveJobChanges() {
+    if (
+      !jobDraft ||
+      !selectedJob
+    ) {
+      return;
+    }
+
+    if (
+      !jobDraft.name.trim()
+    ) {
+      alert(
+        "Job name is required.",
+      );
+
+      return;
+    }
+
+    if (
+      !Number.isInteger(
+        jobDraft.quantity,
+      ) ||
+      jobDraft.quantity < 1
+    ) {
+      alert(
+        "Quantity must be at least 1.",
+      );
+
+      return;
+    }
+
+    /*
+     * Preserve the old job before updating.
+     *
+     * We need this for machine-status
+     * automation.
+     */
+
+    const previousJob = {
+      ...selectedJob,
+    };
+
+    const updatedJob: Job = {
+      ...jobDraft,
+
+      name:
+        jobDraft.name.trim(),
+
+      notes:
+        jobDraft.notes?.trim() ||
+        undefined,
+    };
+
+    try {
+      setSavingJob(
+        true,
+      );
+
+      await handleUpdateJob(
+        updatedJob,
+        previousJob,
+      );
+
+      setEditingJob(
+        false,
+      );
+
+      setJobDraft(
+        null,
+      );
+    } finally {
+      setSavingJob(
+        false,
+      );
+    }
+  }
+
+  async function applyCompletedJobMaterialUsage(
+    previousJob: Job,
+    updatedJob: Job,
+  ): Promise<Job> {
+    /*
+     * Only deduct when the job enters
+     * Completed for the first time.
+     */
+
+    if (
+      updatedJob.status !==
+      "Completed" ||
+      previousJob.status ===
+      "Completed" ||
+      updatedJob.materialDeducted
+    ) {
+      return updatedJob;
+    }
+
+    /*
+     * No assigned material or no usage
+     * means there is nothing to deduct.
+     */
+
+    if (
+      updatedJob.materialId ===
+      undefined ||
+      updatedJob.materialUsageGrams ===
+      undefined ||
+      updatedJob.materialUsageGrams <=
+      0
+    ) {
+      return updatedJob;
+    }
+
+    const material =
+      materials.find(
+        (item) =>
+          item.id ===
+          updatedJob.materialId,
+      );
+
+    if (!material) {
+      return updatedJob;
+    }
+
+    const currentRemaining =
+      material.remainingWeightGrams;
+
+    if (
+      currentRemaining ===
+      undefined
+    ) {
+      return updatedJob;
+    }
+
+    const newRemaining =
+      Math.max(
+        0,
+        currentRemaining -
+        updatedJob.materialUsageGrams,
+      );
+
+    /*
+     * Update the material inventory.
+     */
+
+    await updateMaterial({
+      ...material,
+      remainingWeightGrams:
+        newRemaining,
+    });
+
+    /*
+     * Mark this job as already deducted.
+     */
+
+    const deductedJob: Job = {
+      ...updatedJob,
+      materialDeducted:
+        true,
+    };
+
+    await updateJob(
+      deductedJob,
+    );
+
+    /*
+     * Refresh materials.
+     */
+
+    const refreshedMaterials =
+      await loadMaterials();
+
+    setMaterials(
+      refreshedMaterials,
+    );
+
+    return deductedJob;
   }
 
   /*
@@ -3142,6 +3755,236 @@ function App() {
 
     if (
       activeSection ===
+      "Job Detail" &&
+      selectedJob
+    ) {
+      const assignedAsset =
+        assets.find(
+          (asset) =>
+            asset.id ===
+            selectedJob.assetId,
+        );
+
+      const assignedMachine =
+        machines.find(
+          (machine) =>
+            machine.id ===
+            selectedJob.machineId,
+        );
+
+      const assignedMaterial =
+        materials.find(
+          (material) =>
+            material.id ===
+            selectedJob.materialId,
+        );
+
+      return (
+        <section className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="flex items-center justify-between border-b border-white/10 px-6 py-4">
+            <div className="flex items-center">
+              <button
+                type="button"
+                onClick={() =>
+                  handleSectionChange(
+                    "Jobs",
+                  )
+                }
+                className="text-xs text-zinc-400 transition hover:text-white"
+              >
+                ← Jobs
+              </button>
+
+              <div className="ml-3">
+                <div className="flex items-center gap-2">
+                  <h2 className="text-sm font-semibold text-zinc-100">
+                    {selectedJob.name}
+                  </h2>
+                  <span className="rounded-md border border-white/10 bg-white/[0.03] px-2 py-1 text-[10px] text-zinc-400">
+                    {selectedJob.status}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-zinc-500">Fabrication Job</p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={beginEditJob}
+              className="rounded-lg border border-white/10 bg-white/[0.04] px-4 py-2 text-xs font-medium text-zinc-200 transition hover:border-red-500/40 hover:bg-red-500/10 hover:text-white"
+            >
+              Edit Job
+            </button>
+          </div>
+
+          <div className="min-h-0 flex-1 overflow-y-auto p-6">
+            <div className="grid gap-4 xl:grid-cols-2">
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-5">
+                <h3 className="text-sm font-semibold text-zinc-100">Job Information</h3>
+                <div className="mt-4 space-y-3 text-sm">
+                  <DetailRow label="Job Name" value={selectedJob.name} />
+                  <DetailRow label="Status" value={selectedJob.status} />
+                  <DetailRow label="Quantity" value={String(selectedJob.quantity)} />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-5">
+                <h3 className="text-sm font-semibold text-zinc-100">Assignments</h3>
+                <div className="mt-4 space-y-3 text-sm">
+                  <DetailRow label="Asset" value={assignedAsset?.name ?? "Not assigned"} />
+                  <DetailRow label="Machine" value={assignedMachine?.name ?? "Not assigned"} />
+                  <DetailRow label="Material" value={assignedMaterial?.name ?? "Not assigned"} />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-5">
+                <h3 className="text-sm font-semibold text-zinc-100">Production</h3>
+                <div className="mt-4 space-y-3 text-sm">
+                  <DetailRow label="Estimated Time" value={selectedJob.estimatedMinutes !== undefined ? `${selectedJob.estimatedMinutes} min` : "Not set"} />
+                  <DetailRow label="Actual Time" value={selectedJob.actualMinutes !== undefined ? `${selectedJob.actualMinutes} min` : "Not set"} />
+                  <DetailRow label="Material Usage" value={selectedJob.materialUsageGrams !== undefined ? `${selectedJob.materialUsageGrams} g` : "Not set"} />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-5">
+                <h3 className="text-sm font-semibold text-zinc-100">Activity</h3>
+                <div className="mt-4 space-y-3 text-sm">
+                  <DetailRow label="Created" value={new Date(selectedJob.createdAt).toLocaleString()} />
+                  <DetailRow label="Updated" value={new Date(selectedJob.updatedAt).toLocaleString()} />
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-white/10 bg-white/[0.025] p-5 xl:col-span-2">
+                <h3 className="text-sm font-semibold text-zinc-100">Notes</h3>
+                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-zinc-400">
+                  {selectedJob.notes ?? "No notes added."}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {editingJob && jobDraft && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
+              <div className="flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-xl border border-white/10 bg-zinc-950 shadow-2xl">
+                <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-zinc-100">Edit Job</h3>
+                    <p className="mt-1 text-xs text-zinc-500">Update job assignments and production details.</p>
+                  </div>
+                  <button type="button" onClick={cancelEditJob} className="text-xl leading-none text-zinc-500 transition hover:text-white" aria-label="Close edit job">×</button>
+                </div>
+
+                <div className="min-h-0 flex-1 overflow-y-auto p-5">
+                  <div>
+                    <h4 className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-500">Job Information</h4>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="block">
+                        <span className="mb-2 block text-xs font-medium text-zinc-400">Job Name</span>
+                        <input autoFocus value={jobDraft.name} onChange={(event) => updateJobDraft("name", event.target.value)} className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60" />
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-2 block text-xs font-medium text-zinc-400">Status</span>
+                        <select value={jobDraft.status} onChange={(event) => updateJobDraft("status", event.target.value as JobStatus)} className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60">
+                          <option value="Queued">Queued</option>
+                          <option value="Preparing">Preparing</option>
+                          <option value="Printing">Printing</option>
+                          <option value="Paused">Paused</option>
+                          <option value="Completed">Completed</option>
+                          <option value="Failed">Failed</option>
+                          <option value="Cancelled">Cancelled</option>
+                        </select>
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-2 block text-xs font-medium text-zinc-400">Quantity</span>
+                        <input type="number" min="1" step="1" value={jobDraft.quantity} onChange={(event) => updateJobDraft("quantity", Math.max(1, Number(event.target.value) || 1))} className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60" />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="mt-7 border-t border-white/10 pt-6">
+                    <h4 className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-500">Assignments</h4>
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <label className="block md:col-span-2">
+                        <span className="mb-2 block text-xs font-medium text-zinc-400">Asset</span>
+                        <select value={jobDraft.assetId ?? ""} onChange={(event) => updateJobDraft("assetId", event.target.value === "" ? undefined : Number(event.target.value))} className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60">
+                          <option value="">Not assigned</option>
+                          {assets.map((asset) => <option key={asset.id} value={asset.id}>{asset.name} — {asset.extension.toUpperCase()}</option>)}
+                        </select>
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-2 block text-xs font-medium text-zinc-400">Machine</span>
+                        <select value={jobDraft.machineId ?? ""} onChange={(event) => updateJobDraft("machineId", event.target.value === "" ? undefined : Number(event.target.value))} className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60">
+                          <option value="">Not assigned</option>
+                          {machines.map((machine) => <option key={machine.id} value={machine.id}>{machine.name} — {machine.manufacturer} {machine.model}</option>)}
+                        </select>
+                      </label>
+
+                      <label className="block">
+                        <span className="mb-2 block text-xs font-medium text-zinc-400">Material</span>
+                        <select value={jobDraft.materialId ?? ""} onChange={(event) => updateJobDraft("materialId", event.target.value === "" ? undefined : Number(event.target.value))} className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60">
+                          <option value="">Not assigned</option>
+                          {materials.map((material) => <option key={material.id} value={material.id}>{material.name}</option>)}
+                        </select>
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="mt-7 border-t border-white/10 pt-6">
+                    <h4 className="mb-4 text-xs font-semibold uppercase tracking-wider text-zinc-500">Production</h4>
+                    <div className="grid gap-4 md:grid-cols-3">
+                      <label className="block">
+                        <span className="mb-2 block text-xs font-medium text-zinc-400">Estimated Time (min)</span>
+                        <input type="number" min="0" value={jobDraft.estimatedMinutes ?? ""} onChange={(event) => updateJobDraft("estimatedMinutes", event.target.value === "" ? undefined : Number(event.target.value))} className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60" />
+                      </label>
+                      <label className="block">
+                        <span className="mb-2 block text-xs font-medium text-zinc-400">Actual Time (min)</span>
+                        <input type="number" min="0" value={jobDraft.actualMinutes ?? ""} onChange={(event) => updateJobDraft("actualMinutes", event.target.value === "" ? undefined : Number(event.target.value))} className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60" />
+                      </label>
+                      <label className="block">
+                        <span className="mb-2 block text-xs font-medium text-zinc-400">Material Usage (g)</span>
+                        <input type="number" min="0" step="0.1" value={jobDraft.materialUsageGrams ?? ""} onChange={(event) => updateJobDraft("materialUsageGrams", event.target.value === "" ? undefined : Number(event.target.value))} className="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none focus:border-red-600/60" />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div className="mt-7 border-t border-white/10 pt-6">
+                    <label className="block">
+                      <span className="mb-2 block text-xs font-medium text-zinc-400">Notes</span>
+                      <textarea rows={5} value={jobDraft.notes ?? ""} onChange={(event) => updateJobDraft("notes", event.target.value)} placeholder="Print settings, customer details, production notes..." className="w-full resize-y rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-red-600/60" />
+                    </label>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 border-t border-white/10 px-5 py-4">
+                  <button type="button" onClick={cancelEditJob} disabled={savingJob} className="rounded-lg border border-white/10 px-4 py-2 text-xs text-zinc-400 transition hover:bg-white/5 hover:text-white disabled:opacity-40">Cancel</button>
+                  <button type="button" onClick={() => void saveJobChanges()} disabled={savingJob || !jobDraft.name.trim()} className="rounded-lg bg-red-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-40">{savingJob ? "Saving..." : "Save Changes"}</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
+      );
+    }
+
+    if (
+      activeSection ===
+      "Jobs"
+    ) {
+      return (
+        <JobsPage
+          jobs={jobs}
+          onCreateJob={handleCreateJob}
+          onDeleteJob={handleDeleteJob}
+          onOpenJob={handleOpenJob}
+        />
+      );
+    }
+
+    if (
+      activeSection ===
       "Material Detail" &&
       selectedMaterial
     ) {
@@ -3863,6 +4706,24 @@ function App() {
       );
     }
 
+    if (
+      activeSection ===
+      "Automation"
+    ) {
+      return (
+        <AutomationPage />
+      );
+    }
+
+    if (
+      activeSection ===
+      "Integrations"
+    ) {
+      return (
+        <IntegrationsPage />
+      );
+    }
+
     /*
      * ---------------------------------------------------------
      * LIBRARY EMPTY
@@ -4560,7 +5421,13 @@ function App() {
             : activeSection ===
               "Machine Detail"
               ? "Machines"
-              : activeSection
+              : activeSection ===
+                "Material Detail"
+                ? "Materials"
+                : activeSection ===
+                  "Job Detail"
+                  ? "Jobs"
+                  : activeSection
       }
       onSectionChange={
         handleSectionChange

@@ -9,6 +9,7 @@ import {
     type InstalledApplication,
 } from "../applicationDetection";
 
+
 export function useInstalledApplications() {
     const [installedApps, setInstalledApps] =
         useState<InstalledApplication[]>([]);

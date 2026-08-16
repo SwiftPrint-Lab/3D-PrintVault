@@ -7,13 +7,6 @@ import type {
     MaterialCategory,
 } from "../../../services/databaseService";
 
-import {
-    getMaterialInventoryStatus,
-    getMaterialInventoryStatusClasses,
-    getMaterialProgressBarClasses,
-    getMaterialRemainingPercentage,
-} from "../utils/materialInventory";
-
 interface MaterialsPageProps {
     materials: Material[];
 
@@ -193,16 +186,6 @@ export function MaterialsPage({
                     <div className="grid grid-cols-1 gap-4 xl:grid-cols-2 2xl:grid-cols-3">
                         {materials.map(
                             (material) => {
-                                const percentage =
-                                    getMaterialRemainingPercentage(
-                                        material,
-                                    );
-
-                                const inventoryStatus =
-                                    getMaterialInventoryStatus(
-                                        material,
-                                    );
-
                                 return (
                                     <div
                                         key={
