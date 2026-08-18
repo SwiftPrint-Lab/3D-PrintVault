@@ -153,3 +153,6 @@ target/
 # IDE / editor local files
 .idea/
 Backup/
+
+# 3D PrintVault licensing backend database
+apps/backend/data/

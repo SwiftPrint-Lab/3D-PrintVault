@@ -36,6 +36,9 @@ import {
 import {
     SoftwareUpdateCard,
 } from "./SoftwareUpdateCard";
+import {
+    ActivationLicensingCard,
+} from "../../licensing/components/ActivationLicensingCard";
 
 function formatBytes(
     bytes: number,
@@ -452,12 +455,19 @@ export function SettingsPage() {
                         </div>
                     )}
 
+                    <ActivationLicensingCard
+                        currentVersion={
+                            diagnosticInfo?.version ??
+                            "0.1.1"
+                        }
+                    />
+
                     {/* BACKUP */}
 
                     <SoftwareUpdateCard
                         currentVersion={
                             diagnosticInfo?.version ??
-                            "0.1.0"
+                            "0.1.1"
                         }
                     />
 
