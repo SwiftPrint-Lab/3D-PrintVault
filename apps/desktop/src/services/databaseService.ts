@@ -18,6 +18,19 @@ export interface Collection {
     assetCount?: number;
 }
 
+export interface Category {
+    id: number;
+    name: string;
+
+    parentId?: number;
+
+    createdAt: string;
+    updatedAt: string;
+
+    assetCount: number;
+    childCount: number;
+}
+
 /*
  * ---------------------------------------------------------
  * PROJECT TYPES
@@ -169,9 +182,23 @@ export async function getDatabase() {
         imported_at TEXT NOT NULL,
         thumbnail_path TEXT,
         favorite INTEGER NOT NULL DEFAULT 0,
-        last_opened_at TEXT
-      )
+        last_opened_at TEXT,
+        open_count INTEGER NOT NULL DEFAULT 0
+)
     `);
+
+        try {
+            await db.execute(`
+                ALTER TABLE assets
+                ADD COLUMN open_count INTEGER NOT NULL DEFAULT 0
+        `);
+        } catch (error) {
+            /*
+             * The column already exists.
+             * This is expected after the migration
+             * has been applied once.
+             */
+        }
 
         await db.execute(`
       CREATE TABLE IF NOT EXISTS machines (
@@ -398,6 +425,64 @@ export async function getDatabase() {
     `);
 
         /*
+     * ---------------------------------------------------------
+     * CATEGORIES
+     * ---------------------------------------------------------
+     *
+     * Categories act like virtual folders inside 3D PrintVault.
+     * They do not move or duplicate the original files.
+     *
+     * parent_id allows nested folders later.
+     */
+
+        await db.execute(`
+          CREATE TABLE IF NOT EXISTS categories (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            parent_id INTEGER,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+
+            FOREIGN KEY (
+            parent_id
+            )
+            REFERENCES categories(id)
+            ON DELETE CASCADE
+        )
+        `);
+
+        /*
+         * ---------------------------------------------------------
+         * ASSET <-> CATEGORY RELATIONSHIP
+         * ---------------------------------------------------------
+         */
+
+        await db.execute(`
+          CREATE TABLE IF NOT EXISTS asset_categories (
+          asset_id INTEGER NOT NULL,
+          category_id INTEGER NOT NULL,
+          created_at TEXT NOT NULL,
+
+          PRIMARY KEY (
+          asset_id,
+          category_id
+        ),
+
+          FOREIGN KEY (
+          asset_id
+        )
+          REFERENCES assets(id)
+          ON DELETE CASCADE,
+
+          FOREIGN KEY (
+          category_id
+        )
+          REFERENCES categories(id)
+          ON DELETE CASCADE
+        )
+      `);
+
+        /*
          * ---------------------------------------------------------
          * PROJECTS
          * ---------------------------------------------------------
@@ -534,9 +619,11 @@ export async function loadAssets(): Promise<
                 size_bytes: number | null;
                 modified: string;
                 modified_at: string | null;
+                imported_at: string;
                 thumbnail_path: string | null;
                 favorite: number;
                 last_opened_at: string | null;
+                open_count: number;
             }[]
         >(
             `
@@ -550,10 +637,12 @@ export async function loadAssets(): Promise<
         size_bytes,
         modified,
         modified_at,
+        imported_at,
         thumbnail_path,
         favorite,
-        last_opened_at
-      FROM assets
+        last_opened_at,
+        open_count
+        FROM assets
       ORDER BY imported_at DESC
       `,
         );
@@ -587,9 +676,15 @@ export async function loadAssets(): Promise<
             favorite:
                 row.favorite === 1,
 
+            importedAt:
+                row.imported_at,
+
             lastOpenedAt:
                 row.last_opened_at ??
                 undefined,
+
+            openCount:
+                row.open_count ?? 0,
         }),
     );
 }
@@ -697,6 +792,24 @@ export async function updateAssetLastOpenedAt(
     `,
         [
             lastOpenedAt,
+            id,
+        ],
+    );
+}
+
+export async function incrementAssetOpenCount(
+    id: number,
+): Promise<void> {
+    const database =
+        await getDatabase();
+
+    await database.execute(
+        `
+        UPDATE assets
+        SET open_count = open_count + 1
+        WHERE id = ?
+        `,
+        [
             id,
         ],
     );
@@ -824,6 +937,616 @@ export async function loadCollections(): Promise<
                     row.asset_count,
                 ),
         }),
+    );
+}
+
+/*
+ * ---------------------------------------------------------
+ * CATEGORY FUNCTIONS
+ * ---------------------------------------------------------
+ */
+
+export async function createCategory(
+    name: string,
+    parentId?: number,
+): Promise<Category> {
+    const database =
+        await getDatabase();
+
+    const trimmedName =
+        name.trim();
+
+    if (!trimmedName) {
+        throw new Error(
+            "Category name cannot be empty.",
+        );
+    }
+
+    const now =
+        new Date().toISOString();
+
+    const result =
+        await database.execute(
+            `
+            INSERT INTO categories (
+                name,
+                parent_id,
+                created_at,
+                updated_at
+            )
+            VALUES (?, ?, ?, ?)
+            `,
+            [
+                trimmedName,
+                parentId ?? null,
+                now,
+                now,
+            ],
+        );
+
+    const id =
+        Number(
+            result.lastInsertId,
+        );
+
+    if (
+        !Number.isFinite(
+            id,
+        )
+    ) {
+        throw new Error(
+            "Unable to determine the new category ID.",
+        );
+    }
+
+    return {
+        id,
+        name:
+            trimmedName,
+        parentId,
+        createdAt:
+            now,
+        updatedAt:
+            now,
+        assetCount:
+            0,
+        childCount:
+            0,
+    };
+}
+
+export async function loadCategories(
+    parentId?: number,
+): Promise<Category[]> {
+    const database =
+        await getDatabase();
+
+    const rows =
+        await database.select<
+            {
+                id: number;
+                name: string;
+                parent_id: number | null;
+                created_at: string;
+                updated_at: string;
+                asset_count: number;
+                child_count: number;
+            }[]
+        >(
+            `
+            SELECT
+                categories.id,
+                categories.name,
+                categories.parent_id,
+                categories.created_at,
+                categories.updated_at,
+
+                (
+                    SELECT COUNT(*)
+                    FROM asset_categories
+                    WHERE
+                        asset_categories.category_id =
+                        categories.id
+                ) AS asset_count,
+
+                (
+                    SELECT COUNT(*)
+                    FROM categories AS children
+                    WHERE
+                        children.parent_id =
+                        categories.id
+                ) AS child_count
+
+            FROM categories
+
+            WHERE
+                (
+                    ? IS NULL
+                    AND categories.parent_id IS NULL
+                )
+                OR
+                categories.parent_id = ?
+
+            ORDER BY
+                categories.name COLLATE NOCASE ASC
+            `,
+            [
+                parentId ?? null,
+                parentId ?? null,
+            ],
+        );
+
+    return rows.map(
+        (row) => ({
+            id:
+                row.id,
+
+            name:
+                row.name,
+
+            parentId:
+                row.parent_id ??
+                undefined,
+
+            createdAt:
+                row.created_at,
+
+            updatedAt:
+                row.updated_at,
+
+            assetCount:
+                Number(
+                    row.asset_count,
+                ),
+
+            childCount:
+                Number(
+                    row.child_count,
+                ),
+        }),
+    );
+}
+
+export async function loadAllCategories():
+    Promise<Category[]> {
+    const database =
+        await getDatabase();
+
+    const rows =
+        await database.select<
+            {
+                id: number;
+                name: string;
+                parent_id: number | null;
+                created_at: string;
+                updated_at: string;
+                asset_count: number;
+                child_count: number;
+            }[]
+        >(
+            `
+            SELECT
+                categories.id,
+                categories.name,
+                categories.parent_id,
+                categories.created_at,
+                categories.updated_at,
+
+                (
+                    SELECT COUNT(*)
+                    FROM asset_categories
+                    WHERE
+                        asset_categories.category_id =
+                        categories.id
+                ) AS asset_count,
+
+                (
+                    SELECT COUNT(*)
+                    FROM categories AS children
+                    WHERE
+                        children.parent_id =
+                        categories.id
+                ) AS child_count
+
+            FROM categories
+
+            ORDER BY
+                categories.name COLLATE NOCASE ASC
+            `,
+        );
+
+    return rows.map(
+        (row) => ({
+            id:
+                row.id,
+
+            name:
+                row.name,
+
+            parentId:
+                row.parent_id ??
+                undefined,
+
+            createdAt:
+                row.created_at,
+
+            updatedAt:
+                row.updated_at,
+
+            assetCount:
+                Number(
+                    row.asset_count,
+                ),
+
+            childCount:
+                Number(
+                    row.child_count,
+                ),
+        }),
+    );
+}
+
+export async function renameCategory(
+    id: number,
+    name: string,
+): Promise<void> {
+    const database =
+        await getDatabase();
+
+    const trimmedName =
+        name.trim();
+
+    if (!trimmedName) {
+        throw new Error(
+            "Category name cannot be empty.",
+        );
+    }
+
+    await database.execute(
+        `
+        UPDATE categories
+        SET
+            name = ?,
+            updated_at = ?
+        WHERE id = ?
+        `,
+        [
+            trimmedName,
+            new Date().toISOString(),
+            id,
+        ],
+    );
+}
+
+export async function deleteCategory(
+    id: number,
+): Promise<void> {
+    const database =
+        await getDatabase();
+
+    await database.execute(
+        `
+        DELETE FROM categories
+        WHERE id = ?
+        `,
+        [
+            id,
+        ],
+    );
+}
+
+/*
+ * ---------------------------------------------------------
+ * CATEGORY DETAIL
+ * ---------------------------------------------------------
+ */
+
+export async function loadCategoryById(
+    id: number,
+): Promise<Category | null> {
+    const database =
+        await getDatabase();
+
+    const rows =
+        await database.select<
+            {
+                id: number;
+                name: string;
+                parent_id: number | null;
+                created_at: string;
+                updated_at: string;
+                asset_count: number;
+                child_count: number;
+            }[]
+        >(
+            `
+            SELECT
+                categories.id,
+                categories.name,
+                categories.parent_id,
+                categories.created_at,
+                categories.updated_at,
+
+                (
+                    SELECT COUNT(*)
+                    FROM asset_categories
+                    WHERE
+                        asset_categories.category_id =
+                        categories.id
+                ) AS asset_count,
+
+                (
+                    SELECT COUNT(*)
+                    FROM categories AS children
+                    WHERE
+                        children.parent_id =
+                        categories.id
+                ) AS child_count
+
+            FROM categories
+
+            WHERE
+                categories.id = ?
+
+            LIMIT 1
+            `,
+            [
+                id,
+            ],
+        );
+
+    const row =
+        rows[0];
+
+    if (!row) {
+        return null;
+    }
+
+    return {
+        id:
+            row.id,
+
+        name:
+            row.name,
+
+        parentId:
+            row.parent_id ??
+            undefined,
+
+        createdAt:
+            row.created_at,
+
+        updatedAt:
+            row.updated_at,
+
+        assetCount:
+            Number(
+                row.asset_count,
+            ),
+
+        childCount:
+            Number(
+                row.child_count,
+            ),
+    };
+}
+
+export async function loadChildCategories(
+    parentId: number,
+): Promise<Category[]> {
+    return loadCategories(
+        parentId,
+    );
+}
+
+export async function addAssetToCategory(
+    assetId: number,
+    categoryId: number,
+): Promise<void> {
+    const database =
+        await getDatabase();
+
+    await database.execute(
+        `
+        INSERT OR IGNORE INTO asset_categories (
+            asset_id,
+            category_id,
+            created_at
+        )
+        VALUES (?, ?, ?)
+        `,
+        [
+            assetId,
+            categoryId,
+            new Date().toISOString(),
+        ],
+    );
+
+    await database.execute(
+        `
+        UPDATE categories
+        SET updated_at = ?
+        WHERE id = ?
+        `,
+        [
+            new Date().toISOString(),
+            categoryId,
+        ],
+    );
+}
+
+export async function removeAssetFromCategory(
+    assetId: number,
+    categoryId: number,
+): Promise<void> {
+    const database =
+        await getDatabase();
+
+    await database.execute(
+        `
+        DELETE FROM asset_categories
+        WHERE
+            asset_id = ?
+            AND category_id = ?
+        `,
+        [
+            assetId,
+            categoryId,
+        ],
+    );
+
+    await database.execute(
+        `
+        UPDATE categories
+        SET updated_at = ?
+        WHERE id = ?
+        `,
+        [
+            new Date().toISOString(),
+            categoryId,
+        ],
+    );
+}
+
+export async function loadAssetsForCategory(
+    categoryId: number,
+): Promise<Asset[]> {
+    const database =
+        await getDatabase();
+
+    const rows =
+        await database.select<
+            {
+                id: number;
+                name: string;
+                path: string;
+                extension: string;
+                technology: Asset["technology"];
+                size: string;
+                size_bytes: number | null;
+                modified: string;
+                modified_at: string | null;
+                imported_at: string;
+                thumbnail_path: string | null;
+                favorite: number;
+                last_opened_at: string | null;
+                open_count: number;
+            }[]
+        >(
+            `
+            SELECT
+                assets.id,
+                assets.name,
+                assets.path,
+                assets.extension,
+                assets.technology,
+                assets.size,
+                assets.size_bytes,
+                assets.modified,
+                assets.modified_at,
+                assets.imported_at,
+                assets.thumbnail_path,
+                assets.favorite,
+                assets.last_opened_at,
+                assets.open_count
+
+            FROM assets
+
+            INNER JOIN asset_categories
+                ON asset_categories.asset_id =
+                    assets.id
+
+            WHERE
+                asset_categories.category_id = ?
+
+            ORDER BY
+                asset_categories.created_at DESC
+            `,
+            [
+                categoryId,
+            ],
+        );
+
+    return rows.map(
+        (row) => ({
+            id:
+                row.id,
+
+            name:
+                row.name,
+
+            path:
+                row.path,
+
+            extension:
+                row.extension,
+
+            technology:
+                row.technology,
+
+            size:
+                row.size,
+
+            sizeBytes:
+                row.size_bytes ??
+                undefined,
+
+            modified:
+                row.modified,
+
+            modifiedAt:
+                row.modified_at ??
+                undefined,
+
+            importedAt:
+                row.imported_at,
+
+            thumbnailPath:
+                row.thumbnail_path ??
+                undefined,
+
+            favorite:
+                row.favorite === 1,
+
+            lastOpenedAt:
+                row.last_opened_at ??
+                undefined,
+
+            openCount:
+                row.open_count ?? 0,
+        }),
+    );
+}
+
+export async function categoryIsAssignedToAsset(
+    categoryId: number,
+    assetId: number,
+): Promise<boolean> {
+    const database =
+        await getDatabase();
+
+    const rows =
+        await database.select<
+            {
+                count: number;
+            }[]
+        >(
+            `
+            SELECT COUNT(*) AS count
+            FROM asset_categories
+            WHERE
+                category_id = ?
+                AND asset_id = ?
+            `,
+            [
+                categoryId,
+                assetId,
+            ],
+        );
+
+    return (
+        (rows[0]?.count ?? 0) >
+        0
     );
 }
 
@@ -1039,9 +1762,11 @@ export async function loadAssetsForCollection(
                 size_bytes: number | null;
                 modified: string;
                 modified_at: string | null;
+                imported_at: string;
                 thumbnail_path: string | null;
                 favorite: number;
                 last_opened_at: string | null;
+                open_count: number;
             }[]
         >(
             `

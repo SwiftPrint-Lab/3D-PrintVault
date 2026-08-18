@@ -30,6 +30,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -37,5 +38,13 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDcwQzRDQUY4MTg4NEE1NTEKUldSUnBZUVkrTXJFY01Ya0R3d01KcVpIcHU3RlVEaHQ1UzgzNmU5RllJalZSWUtSRXBmbGlRQkUK",
+      "endpoints": [
+        "https://github.com/SwiftPrint-Lab/3D-PrintVault/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

@@ -10,6 +10,8 @@ import { AssetGrid } from "./AssetGrid";
 import {
   LibraryToolbar,
   type AssetTechnologyFilter,
+  type AssetSortDirection,
+  type AssetSortOption,
 } from "./LibraryToolbar";
 
 interface LibraryPageProps {
@@ -30,6 +32,20 @@ interface LibraryPageProps {
 
   onTechnologyFilterChange: (
     filter: AssetTechnologyFilter,
+  ) => void;
+
+  sortOption:
+  AssetSortOption;
+
+  onSortOptionChange: (
+    option: AssetSortOption,
+  ) => void;
+
+  sortDirection:
+  AssetSortDirection;
+
+  onSortDirectionChange: (
+    direction: AssetSortDirection,
   ) => void;
 
   onAssetSelect: (
@@ -92,6 +108,12 @@ export function LibraryPage({
   onViewModeChange,
   technologyFilter,
   onTechnologyFilterChange,
+
+  sortOption,
+  onSortOptionChange,
+  sortDirection,
+  onSortDirectionChange,
+
   onAssetSelect,
   onDelete,
   onUpdateFavorite,
@@ -120,6 +142,18 @@ export function LibraryPage({
         }
         onTechnologyFilterChange={
           onTechnologyFilterChange
+        }
+        sortOption={
+          sortOption
+        }
+        onSortOptionChange={
+          onSortOptionChange
+        }
+        sortDirection={
+          sortDirection
+        }
+        onSortDirectionChange={
+          onSortDirectionChange
         }
       />
 

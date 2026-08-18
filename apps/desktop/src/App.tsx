@@ -19,6 +19,8 @@ import type { Asset } from "./features/library/types/asset";
 
 import type {
   AssetTechnologyFilter,
+  AssetSortDirection,
+  AssetSortOption,
 } from "./features/library/components/LibraryToolbar";
 
 import { selectAssetsForImport } from "./services/importService";
@@ -26,28 +28,38 @@ import { selectAssetsForImport } from "./services/importService";
 import {
   addAssetToCollection,
   addAssetToProject,
+  addAssetToCategory,
   assetExistsByPath,
   createCollection,
   createProject,
+  createCategory,
   deleteAssetById,
   deleteCollection,
   deleteProject,
+  deleteCategory,
   loadAssets,
   loadAssetsForCollection,
   loadAssetsForProject,
   loadCollections,
   loadProjects,
+  loadCategories,
+  loadCategoryById,
+  loadChildCategories,
+  loadAssetsForCategory,
   removeAssetFromCollection,
   removeAssetFromProject,
   renameCollection,
   renameProject,
+  renameCategory,
   saveAssets,
   updateAssetFavorite,
   updateAssetLastOpenedAt,
+  incrementAssetOpenCount,
   updateProjectStatus,
   updateProjectDescription,
   createMachine,
   deleteMachine,
+  loadAllCategories,
   loadMachines,
   updateMachine,
   createMaterial,
@@ -58,7 +70,9 @@ import {
   deleteJob,
   loadJobs,
   updateJob,
+  removeAssetFromCategory,
   type Collection,
+  type Category,
   type Project,
   type ProjectStatus,
   type Machine,
@@ -84,6 +98,14 @@ import {
 import { JobsPage } from "./features/jobs/components/JobsPage";
 import { AutomationPage } from "./features/automation/components/AutomationPage";
 import { IntegrationsPage } from "./features/integrations/components/IntegrationsPage";
+import { CategoriesPage } from "./features/categories/components/CategoriesPage";
+import { CategoryDetailPage } from "./features/categories/components/CategoryDetailPage";
+import { AddAssetsToCategoryModal } from "./features/categories/components/AddAssetsToCategoryModal";
+import { MoveAssetToCategoryModal } from "./features/categories/components/MoveAssetToCategoryModal";
+import { CalculatorPage } from "./features/calculator/components/CalculatorPage";
+import { SettingsPage } from "./features/settings/components/SettingsPage";
+import { applyPendingStartupRecovery, maybeRunAutomaticBackup } from "./features/settings/backupService";
+
 
 function App() {
   /*
@@ -112,10 +134,23 @@ function App() {
   );
 
   const [
+    sortOption,
+    setSortOption,
+  ] = useState<AssetSortOption>(
+    "Date Added",
+  );
+
+  const [
+    sortDirection,
+    setSortDirection,
+  ] = useState<AssetSortDirection>(
+    "Descending",
+  );
+
+  const [
     search,
     setSearch,
   ] = useState("");
-
   /*
    * ---------------------------------------------------------
    * LIBRARY STATE
@@ -156,6 +191,45 @@ function App() {
     collectionAssets,
     setCollectionAssets,
   ] = useState<Asset[]>([]);
+
+  const [
+    categories,
+    setCategories,
+  ] = useState<Category[]>([]);
+
+  const [
+    selectedCategory,
+    setSelectedCategory,
+  ] = useState<Category | null>(
+    null,
+  );
+
+  const [
+    categoryAssets,
+    setCategoryAssets,
+  ] = useState<Asset[]>([]);
+
+  const [
+    childCategories,
+    setChildCategories,
+  ] = useState<Category[]>([]);
+
+  const [
+    showAddAssetsModal,
+    setShowAddAssetsModal,
+  ] = useState(false);
+
+  const [
+    organizingAsset,
+    setOrganizingAsset,
+  ] = useState<Asset | null>(
+    null,
+  );
+
+  const [
+    transferCategories,
+    setTransferCategories,
+  ] = useState<Category[]>([]);
 
   /*
    * ---------------------------------------------------------
@@ -292,7 +366,33 @@ function App() {
    * FILTER ASSETS
    * ---------------------------------------------------------
    */
+  const completedPrintCountByAsset =
+    useMemo(() => {
+      const counts =
+        new Map<number, number>();
 
+      for (const job of jobs) {
+        if (
+          job.status !==
+          "Completed" ||
+          job.assetId ===
+          undefined
+        ) {
+          continue;
+        }
+
+        counts.set(
+          job.assetId,
+          (counts.get(
+            job.assetId,
+          ) ?? 0) + 1,
+        );
+      }
+
+      return counts;
+    }, [
+      jobs,
+    ]);
   const filteredAssets =
     useMemo(() => {
       const query =
@@ -304,8 +404,7 @@ function App() {
         assets;
 
       /*
-       * Collection detail uses only assets
-       * belonging to the selected collection.
+       * Collection detail
        */
 
       if (
@@ -317,8 +416,7 @@ function App() {
       }
 
       /*
-       * Project detail uses only assets
-       * belonging to the selected project.
+       * Project detail
        */
 
       if (
@@ -330,7 +428,7 @@ function App() {
       }
 
       /*
-       * FAVORITES
+       * Favorites
        */
 
       if (
@@ -346,7 +444,7 @@ function App() {
       }
 
       /*
-       * RECENT
+       * Recent
        */
 
       if (
@@ -354,39 +452,16 @@ function App() {
         "Recent"
       ) {
         sectionAssets =
-          sectionAssets
-            .filter(
-              (asset) =>
-                Boolean(
-                  asset.lastOpenedAt,
-                ),
-            )
-            .sort(
-              (a, b) => {
-                const aTime =
-                  a.lastOpenedAt
-                    ? new Date(
-                      a.lastOpenedAt,
-                    ).getTime()
-                    : 0;
-
-                const bTime =
-                  b.lastOpenedAt
-                    ? new Date(
-                      b.lastOpenedAt,
-                    ).getTime()
-                    : 0;
-
-                return (
-                  bTime -
-                  aTime
-                );
-              },
-            );
+          sectionAssets.filter(
+            (asset) =>
+              Boolean(
+                asset.lastOpenedAt,
+              ),
+          );
       }
 
       /*
-       * TECHNOLOGY FILTER
+       * Technology filter
        */
 
       if (
@@ -402,28 +477,149 @@ function App() {
       }
 
       /*
-       * SEARCH FILTER
+       * Search filter
        */
 
-      if (!query) {
-        return sectionAssets;
+      if (query) {
+        sectionAssets =
+          sectionAssets.filter(
+            (asset) => {
+              return (
+                asset.name
+                  .toLowerCase()
+                  .includes(query) ||
+                asset.extension
+                  .toLowerCase()
+                  .includes(query) ||
+                asset.technology
+                  .toLowerCase()
+                  .includes(query)
+              );
+            },
+          );
       }
 
-      return sectionAssets.filter(
-        (asset) => {
+      /*
+       * Copy before sorting.
+       *
+       * Never sort the original state array
+       * directly.
+       */
+
+      const sortedAssets = [
+        ...sectionAssets,
+      ];
+
+      const directionMultiplier =
+        sortDirection ===
+          "Ascending"
+          ? 1
+          : -1;
+
+      sortedAssets.sort(
+        (a, b) => {
+          let comparison = 0;
+
+          switch (
+          sortOption
+          ) {
+            case "Name":
+              comparison =
+                a.name.localeCompare(
+                  b.name,
+                  undefined,
+                  {
+                    sensitivity:
+                      "base",
+                    numeric:
+                      true,
+                  },
+                );
+
+              break;
+
+            case "File Size":
+              comparison =
+                (a.sizeBytes ?? 0) -
+                (b.sizeBytes ?? 0);
+
+              break;
+
+            case "Most Opened":
+              comparison =
+                (a.openCount ?? 0) -
+                (b.openCount ?? 0);
+
+              break;
+
+            case "Printed":
+              comparison =
+                (
+                  completedPrintCountByAsset.get(
+                    a.id,
+                  ) ?? 0
+                ) -
+                (
+                  completedPrintCountByAsset.get(
+                    b.id,
+                  ) ?? 0
+                );
+
+              break;
+
+            case "Date Added":
+            default: {
+              const aTime =
+                a.importedAt
+                  ? new Date(
+                    a.importedAt,
+                  ).getTime()
+                  : 0;
+
+              const bTime =
+                b.importedAt
+                  ? new Date(
+                    b.importedAt,
+                  ).getTime()
+                  : 0;
+
+              comparison =
+                aTime -
+                bTime;
+
+              break;
+            }
+          }
+
+          /*
+           * Stable fallback by name.
+           */
+
+          if (
+            comparison ===
+            0
+          ) {
+            comparison =
+              a.name.localeCompare(
+                b.name,
+                undefined,
+                {
+                  sensitivity:
+                    "base",
+                  numeric:
+                    true,
+                },
+              );
+          }
+
           return (
-            asset.name
-              .toLowerCase()
-              .includes(query) ||
-            asset.extension
-              .toLowerCase()
-              .includes(query) ||
-            asset.technology
-              .toLowerCase()
-              .includes(query)
+            comparison *
+            directionMultiplier
           );
         },
       );
+
+      return sortedAssets;
     }, [
       assets,
       collectionAssets,
@@ -431,7 +627,11 @@ function App() {
       search,
       activeSection,
       technologyFilter,
+      sortOption,
+      sortDirection,
+      completedPrintCountByAsset,
     ]);
+
 
   /*
    * ---------------------------------------------------------
@@ -442,6 +642,7 @@ function App() {
   useEffect(() => {
     async function initializeApp() {
       try {
+        await applyPendingStartupRecovery();
         const [
           savedAssets,
           savedCollections,
@@ -449,6 +650,7 @@ function App() {
           savedMachines,
           savedMaterials,
           savedJobs,
+          savedCategories,
         ] =
           await Promise.all([
             loadAssets(),
@@ -457,6 +659,7 @@ function App() {
             loadMachines(),
             loadMaterials(),
             loadJobs(),
+            loadCategories(),
           ]);
 
         setAssets(
@@ -483,6 +686,10 @@ function App() {
           savedJobs,
         );
 
+        setCategories(
+          savedCategories,
+        );
+
         if (
           savedAssets.length >
           0
@@ -493,6 +700,14 @@ function App() {
         } else {
           setSelectedAsset(
             null,
+          );
+        }
+        try {
+          await maybeRunAutomaticBackup();
+        } catch (backupError) {
+          console.error(
+            "Automatic backup failed:",
+            backupError,
           );
         }
       } catch (error) {
@@ -507,6 +722,7 @@ function App() {
         setMachines([]);
         setMaterials([]);
         setJobs([]);
+        setCategories([]);
 
         setSelectedAsset(
           null,
@@ -617,9 +833,13 @@ function App() {
     const now =
       new Date().toISOString();
 
+    const nextOpenCount =
+      (asset.openCount ?? 0) + 1;
+
     const updatedAsset: Asset = {
       ...asset,
       lastOpenedAt: now,
+      openCount: nextOpenCount,
     };
 
     setSelectedAsset(
@@ -678,10 +898,15 @@ function App() {
     );
 
     try {
-      await updateAssetLastOpenedAt(
-        asset.id,
-        now,
-      );
+      await Promise.all([
+        updateAssetLastOpenedAt(
+          asset.id,
+          now,
+        ),
+        incrementAssetOpenCount(
+          asset.id,
+        ),
+      ]);
     } catch (error) {
       console.error(
         "Failed to update recent timestamp:",
@@ -1215,6 +1440,530 @@ function App() {
       alert(
         `Unable to remove "${asset.name}" from "${selectedCollection.name}": ${String(error)}`,
       );
+    }
+  }
+
+  async function handleCreateCategory(
+    name: string,
+  ): Promise<Category | null> {
+    try {
+      const category =
+        await createCategory(
+          name,
+        );
+
+      const refreshedCategories =
+        await loadCategories();
+
+      setCategories(
+        refreshedCategories,
+      );
+
+      return category;
+    } catch (error) {
+      console.error(
+        "Failed to create category:",
+        error,
+      );
+
+      alert(
+        `Unable to create category: ${String(error)}`,
+      );
+
+      return null;
+    }
+  }
+
+  async function handleRenameCategory(
+    category: Category,
+    name: string,
+  ): Promise<void> {
+    try {
+      await renameCategory(
+        category.id,
+        name,
+      );
+
+      const refreshedCategories =
+        await loadCategories();
+
+      setCategories(
+        refreshedCategories,
+      );
+    } catch (error) {
+      console.error(
+        "Failed to rename category:",
+        error,
+      );
+
+      alert(
+        `Unable to rename "${category.name}": ${String(error)}`,
+      );
+
+      throw error;
+    }
+  }
+
+  async function handleDeleteCategory(
+    category: Category,
+  ): Promise<void> {
+    const confirmed =
+      window.confirm(
+        `Delete folder "${category.name}"?\n\nAssets inside it will remain in your Library.`,
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await deleteCategory(
+        category.id,
+      );
+
+      const refreshedCategories =
+        await loadCategories();
+
+      setCategories(
+        refreshedCategories,
+      );
+    } catch (error) {
+      console.error(
+        "Failed to delete category:",
+        error,
+      );
+
+      alert(
+        `Unable to delete category: ${String(error)}`,
+      );
+    }
+  }
+
+  async function handleOpenCategory(
+    category: Category,
+  ): Promise<void> {
+    try {
+      const [
+        refreshedCategory,
+        assetsInCategory,
+        children,
+      ] =
+        await Promise.all([
+          loadCategoryById(
+            category.id,
+          ),
+          loadAssetsForCategory(
+            category.id,
+          ),
+          loadChildCategories(
+            category.id,
+          ),
+        ]);
+
+      if (!refreshedCategory) {
+        throw new Error(
+          "Category could not be found.",
+        );
+      }
+
+      setSelectedCategory(
+        refreshedCategory,
+      );
+
+      setCategoryAssets(
+        assetsInCategory,
+      );
+
+      setChildCategories(
+        children,
+      );
+
+      setTechnologyFilter(
+        "All Assets",
+      );
+
+      setActiveSection(
+        "Category Detail",
+      );
+    } catch (error) {
+      console.error(
+        "Failed to open category:",
+        error,
+      );
+
+      alert(
+        `Unable to open category: ${String(error)}`,
+      );
+    }
+  }
+
+  async function refreshSelectedCategory(
+    categoryId: number,
+  ): Promise<void> {
+    const [
+      refreshedCategory,
+      refreshedAssets,
+      refreshedChildren,
+    ] =
+      await Promise.all([
+        loadCategoryById(
+          categoryId,
+        ),
+        loadAssetsForCategory(
+          categoryId,
+        ),
+        loadChildCategories(
+          categoryId,
+        ),
+      ]);
+
+    if (!refreshedCategory) {
+      setSelectedCategory(
+        null,
+      );
+
+      setCategoryAssets(
+        [],
+      );
+
+      setChildCategories(
+        [],
+      );
+
+      setActiveSection(
+        "Categories",
+      );
+
+      return;
+    }
+
+    setSelectedCategory(
+      refreshedCategory,
+    );
+
+    setCategoryAssets(
+      refreshedAssets,
+    );
+
+    setChildCategories(
+      refreshedChildren,
+    );
+  }
+
+  async function handleCreateChildCategory(
+    name: string,
+  ): Promise<Category | null> {
+    if (!selectedCategory) {
+      return null;
+    }
+
+    try {
+      const category =
+        await createCategory(
+          name,
+          selectedCategory.id,
+        );
+
+      await refreshSelectedCategory(
+        selectedCategory.id,
+      );
+
+      /*
+       * Refresh root categories too so their
+       * child-folder counts stay accurate.
+       */
+
+      const refreshedRootCategories =
+        await loadCategories();
+
+      setCategories(
+        refreshedRootCategories,
+      );
+
+      return category;
+    } catch (error) {
+      console.error(
+        "Failed to create child category:",
+        error,
+      );
+
+      alert(
+        `Unable to create folder: ${String(error)}`,
+      );
+
+      return null;
+    }
+  }
+
+  async function handleBackFromCategory() {
+    if (
+      !selectedCategory
+    ) {
+      handleSectionChange(
+        "Categories",
+      );
+
+      return;
+    }
+
+    if (
+      selectedCategory.parentId ===
+      undefined
+    ) {
+      handleSectionChange(
+        "Categories",
+      );
+
+      return;
+    }
+
+    try {
+      const parentCategory =
+        await loadCategoryById(
+          selectedCategory.parentId,
+        );
+
+      if (!parentCategory) {
+        handleSectionChange(
+          "Categories",
+        );
+
+        return;
+      }
+
+      await handleOpenCategory(
+        parentCategory,
+      );
+    } catch (error) {
+      console.error(
+        "Failed to navigate to parent category:",
+        error,
+      );
+
+      handleSectionChange(
+        "Categories",
+      );
+    }
+  }
+
+  function handleAddAssetsToSelectedCategory() {
+    if (!selectedCategory) {
+      return;
+    }
+
+    setShowAddAssetsModal(
+      true,
+    );
+  }
+
+  async function handleConfirmAddAssetsToCategory(
+    assetIds: number[],
+  ): Promise<void> {
+    if (
+      !selectedCategory ||
+      assetIds.length === 0
+    ) {
+      return;
+    }
+
+    try {
+      await Promise.all(
+        assetIds.map(
+          (assetId) =>
+            addAssetToCategory(
+              assetId,
+              selectedCategory.id,
+            ),
+        ),
+      );
+
+      /*
+       * Refresh the currently open folder.
+       */
+
+      await refreshSelectedCategory(
+        selectedCategory.id,
+      );
+
+      /*
+       * Refresh root Categories so folder
+       * asset counts remain synchronized.
+       */
+
+      const refreshedCategories =
+        await loadCategories();
+
+      setCategories(
+        refreshedCategories,
+      );
+    } catch (error) {
+      console.error(
+        "Failed to add assets to category:",
+        error,
+      );
+
+      alert(
+        `Unable to add assets to "${selectedCategory.name}": ${String(error)}`,
+      );
+
+      throw error;
+    }
+  }
+
+  async function handleRemoveAssetFromCategory(
+    asset: Asset,
+  ): Promise<void> {
+    if (!selectedCategory) {
+      return;
+    }
+
+    const confirmed =
+      window.confirm(
+        `Remove "${asset.name}" from "${selectedCategory.name}"?\n\nThe asset will remain in your main Library.`,
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    try {
+      await removeAssetFromCategory(
+        asset.id,
+        selectedCategory.id,
+      );
+
+      await refreshSelectedCategory(
+        selectedCategory.id,
+      );
+
+      const refreshedCategories =
+        await loadCategories();
+
+      setCategories(
+        refreshedCategories,
+      );
+    } catch (error) {
+      console.error(
+        "Failed to remove asset from category:",
+        error,
+      );
+
+      alert(
+        `Unable to remove "${asset.name}" from "${selectedCategory.name}": ${String(error)}`,
+      );
+    }
+  }
+
+  async function handleOrganizeCategoryAsset(
+    asset: Asset,
+  ): Promise<void> {
+    if (!selectedCategory) {
+      return;
+    }
+
+    try {
+      const allCategories =
+        await loadAllCategories();
+
+      setTransferCategories(
+        allCategories,
+      );
+
+      setOrganizingAsset(
+        asset,
+      );
+    } catch (error) {
+      console.error(
+        "Failed to load categories for asset organization:",
+        error,
+      );
+
+      alert(
+        `Unable to load folders: ${String(error)}`,
+      );
+    }
+  }
+
+  async function handleTransferCategoryAsset(
+    destinationCategory: Category,
+    mode: "add" | "move",
+  ): Promise<void> {
+    if (
+      !selectedCategory ||
+      !organizingAsset
+    ) {
+      return;
+    }
+
+    const sourceCategoryId =
+      selectedCategory.id;
+
+    try {
+      /*
+       * Add the relationship to the
+       * destination category first.
+       */
+
+      await addAssetToCategory(
+        organizingAsset.id,
+        destinationCategory.id,
+      );
+
+      /*
+       * A move means the destination
+       * relationship is created first,
+       * then the source relationship
+       * is removed.
+       */
+
+      if (
+        mode ===
+        "move"
+      ) {
+        await removeAssetFromCategory(
+          organizingAsset.id,
+          sourceCategoryId,
+        );
+      }
+
+      /*
+       * Refresh the currently open
+       * source category.
+       */
+
+      await refreshSelectedCategory(
+        sourceCategoryId,
+      );
+
+      /*
+       * Refresh root category counts.
+       */
+
+      const refreshedCategories =
+        await loadCategories();
+
+      setCategories(
+        refreshedCategories,
+      );
+
+      setOrganizingAsset(
+        null,
+      );
+
+      setTransferCategories(
+        [],
+      );
+    } catch (error) {
+      console.error(
+        "Failed to organize category asset:",
+        error,
+      );
+
+      alert(
+        `Unable to ${mode === "move" ? "move" : "add"} "${organizingAsset.name}": ${String(error)}`,
+      );
+
+      throw error;
     }
   }
 
@@ -1940,6 +2689,40 @@ function App() {
     }
 
     /*
+ * Leave category-detail state
+ * when navigating somewhere else.
+ */
+
+    if (
+      section !==
+      "Category Detail"
+    ) {
+      setSelectedCategory(
+        null,
+      );
+
+      setCategoryAssets(
+        [],
+      );
+
+      setChildCategories(
+        [],
+      );
+
+      setShowAddAssetsModal(
+        false,
+      );
+
+      setOrganizingAsset(
+        null,
+      );
+
+      setTransferCategories(
+        [],
+      );
+    }
+
+    /*
      * Leave machine-detail state
      * when navigating somewhere else.
      */
@@ -2035,9 +2818,13 @@ function App() {
       section ===
       "Collections" ||
       section ===
+      "Categories" ||
+      section ===
       "Machines" ||
       section ===
       "Materials" ||
+      section ===
+      "3D Calculator" ||
       section ===
       "Jobs"
     ) {
@@ -2878,7 +3665,9 @@ function App() {
     ) {
       return (
         <section className="flex min-h-0 min-w-0 flex-1 flex-col">
-          {/* ------------------------------------------------------
+          {
+
+          /* ------------------------------------------------------
        * MACHINE DETAIL HEADER
        * ------------------------------------------------------ */}
 
@@ -4724,6 +5513,155 @@ function App() {
       );
     }
 
+    if (
+      activeSection ===
+      "Category Detail" &&
+      selectedCategory
+    ) {
+      const existingCategoryAssetIds =
+        new Set(
+          categoryAssets.map(
+            (asset) =>
+              asset.id,
+          ),
+        );
+      if (
+        activeSection ===
+        "Category Detail" &&
+        selectedCategory
+      ) {
+
+        return (
+          <>
+            <CategoryDetailPage
+              category={
+                selectedCategory
+              }
+              childCategories={
+                childCategories
+              }
+              assets={
+                categoryAssets
+              }
+              onBack={() =>
+                void handleBackFromCategory()
+              }
+              onOpenCategory={(category) =>
+                void handleOpenCategory(
+                  category,
+                )
+              }
+              onCreateChildCategory={
+                handleCreateChildCategory
+              }
+              onAddAssets={
+                handleAddAssetsToSelectedCategory
+              }
+              onRemoveAsset={
+                handleRemoveAssetFromCategory
+              }
+              onOrganizeAsset={(asset) =>
+                void handleOrganizeCategoryAsset(
+                  asset,
+                )
+              }
+            />
+
+            {showAddAssetsModal && (
+              <AddAssetsToCategoryModal
+                category={
+                  selectedCategory
+                }
+                assets={
+                  assets
+                }
+                existingAssetIds={
+                  existingCategoryAssetIds
+                }
+                onClose={() =>
+                  setShowAddAssetsModal(
+                    false,
+                  )
+                }
+                onAddAssets={
+                  handleConfirmAddAssetsToCategory
+                }
+              />
+            )}
+
+            {organizingAsset && (
+              <MoveAssetToCategoryModal
+                asset={
+                  organizingAsset
+                }
+                currentCategory={
+                  selectedCategory
+                }
+                categories={
+                  transferCategories
+                }
+                onClose={() => {
+                  setOrganizingAsset(
+                    null,
+                  );
+
+                  setTransferCategories(
+                    [],
+                  );
+                }}
+                onTransfer={
+                  handleTransferCategoryAsset
+                }
+              />
+            )}
+          </>
+        );
+      }
+    }
+
+    if (
+      activeSection ===
+      "Categories"
+    ) {
+      return (
+        <CategoriesPage
+          categories={
+            categories
+          }
+          onCreateCategory={
+            handleCreateCategory
+          }
+          onRenameCategory={
+            handleRenameCategory
+          }
+          onDeleteCategory={
+            handleDeleteCategory
+          }
+          onOpenCategory={
+            handleOpenCategory
+          }
+        />
+      );
+    }
+
+    if (
+      activeSection ===
+      "3D Calculator"
+    ) {
+      return (
+        <CalculatorPage />
+      );
+    }
+
+    if (
+      activeSection ===
+      "Settings"
+    ) {
+      return (
+        <SettingsPage />
+      );
+    }
+
     /*
      * ---------------------------------------------------------
      * LIBRARY EMPTY
@@ -5345,6 +6283,18 @@ function App() {
             onTechnologyFilterChange={
               setTechnologyFilter
             }
+            sortOption={
+              sortOption
+            }
+            onSortOptionChange={
+              setSortOption
+            }
+            sortDirection={
+              sortDirection
+            }
+            onSortDirectionChange={
+              setSortDirection
+            }
             onAssetSelect={
               handleAssetSelect
             }
@@ -5416,18 +6366,21 @@ function App() {
           "Collection Detail"
           ? "Collections"
           : activeSection ===
-            "Project Detail"
-            ? "Projects"
+            "Category Detail"
+            ? "Categories"
             : activeSection ===
-              "Machine Detail"
-              ? "Machines"
+              "Project Detail"
+              ? "Projects"
               : activeSection ===
-                "Material Detail"
-                ? "Materials"
+                "Machine Detail"
+                ? "Machines"
                 : activeSection ===
-                  "Job Detail"
-                  ? "Jobs"
-                  : activeSection
+                  "Material Detail"
+                  ? "Materials"
+                  : activeSection ===
+                    "Job Detail"
+                    ? "Jobs"
+                    : activeSection
       }
       onSectionChange={
         handleSectionChange
@@ -5445,7 +6398,7 @@ function App() {
       <div className="flex min-h-0 flex-1">
         {renderContent()}
       </div>
-    </AppShell>
+    </AppShell >
   );
 }
 

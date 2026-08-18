@@ -22,5 +22,9 @@ export interface Asset {
 
     favorite?: boolean;
 
+    importedAt?: string;
+
     lastOpenedAt?: string;
+
+    openCount?: number;
 }

@@ -5,9 +5,11 @@ import {
     FiClock,
     FiCpu,
     FiFolder,
+    FiFolderPlus,
     FiHeart,
     FiLayers,
     FiPackage,
+    FiPercent,
     FiSettings,
     FiSliders,
     FiTool,
@@ -59,6 +61,10 @@ const navigationGroups: NavigationGroup[] = [
                 label: "Collections",
                 icon: <FiLayers />,
             },
+            {
+                label: "Categories",
+                icon: <FiFolderPlus />,
+            },
         ],
     },
     {
@@ -71,6 +77,10 @@ const navigationGroups: NavigationGroup[] = [
             {
                 label: "Materials",
                 icon: <FiPackage />,
+            },
+            {
+                label: "3D Calculator",
+                icon: <FiPercent />,
             },
             {
                 label: "Jobs",
@@ -136,7 +146,9 @@ export function Sidebar({
                         >
                             {group.title && (
                                 <p className="mb-2 px-3 text-[10px] font-semibold tracking-[0.16em] text-zinc-600">
-                                    {group.title}
+                                    {
+                                        group.title
+                                    }
                                 </p>
                             )}
 
@@ -159,8 +171,8 @@ export function Sidebar({
                                                     )
                                                 }
                                                 className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition ${active
-                                                        ? "bg-red-600 text-white shadow-sm"
-                                                        : "text-zinc-400 hover:bg-white/5 hover:text-white"
+                                                    ? "bg-red-600 text-white shadow-sm"
+                                                    : "text-zinc-400 hover:bg-white/5 hover:text-white"
                                                     }`}
                                             >
                                                 <span className="text-base">
@@ -193,9 +205,9 @@ export function Sidebar({
                         )
                     }
                     className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm transition ${activeSection ===
-                            "Settings"
-                            ? "bg-red-600 text-white"
-                            : "text-zinc-400 hover:bg-white/5 hover:text-white"
+                        "Settings"
+                        ? "bg-red-600 text-white"
+                        : "text-zinc-400 hover:bg-white/5 hover:text-white"
                         }`}
                 >
                     <FiSettings />
