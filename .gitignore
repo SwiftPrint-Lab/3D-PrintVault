@@ -156,3 +156,6 @@ Backup/
 
 # 3D PrintVault licensing backend database
 apps/backend/data/
+
+# Generated updater release manifest
+apps/desktop/latest.json
