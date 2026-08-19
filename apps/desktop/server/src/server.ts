@@ -15,6 +15,10 @@ import {
   registerLicenseRoutes,
 } from "./routes/licenses.js";
 
+import {
+  registerAdminRoutes,
+} from "./routes/admin.js";
+
 const app =
   Fastify({
     logger: true,
@@ -28,6 +32,10 @@ await app.register(
 );
 
 await registerLicenseRoutes(
+  app,
+);
+
+await registerAdminRoutes(
   app,
 );
 
