@@ -33,6 +33,20 @@ export async function initializeSchema() {
   `);
 
   await pool.query(`
+    ALTER TABLE licenses
+    ADD COLUMN IF NOT EXISTS license_key_hint TEXT
+  `);
+
+  /*
+   * Legacy licenses may still contain plaintext license_key values.
+   * New licenses are stored hash-only, so license_key must be nullable.
+   */
+  await pool.query(`
+    ALTER TABLE licenses
+    ALTER COLUMN license_key DROP NOT NULL
+  `);
+
+  await pool.query(`
     CREATE TABLE IF NOT EXISTS activations (
       id BIGSERIAL PRIMARY KEY,
       license_id BIGINT NOT NULL REFERENCES licenses(id) ON DELETE CASCADE,
