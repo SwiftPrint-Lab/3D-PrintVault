@@ -1,4 +1,7 @@
 import { pool } from "./db.js";
+import {
+  hashActivationToken,
+} from "./token.js";
 
 export async function initializeSchema() {
   await pool.query(`
@@ -36,4 +39,45 @@ export async function initializeSchema() {
     CREATE INDEX IF NOT EXISTS idx_activations_token
     ON activations (activation_token)
   `);
+
+  /*
+   * Migrate legacy plaintext activation tokens.
+   *
+   * Existing desktop installations retain their original
+   * bearer token. The API hashes incoming bearer tokens
+   * before querying PostgreSQL, so existing installations
+   * continue working after this migration.
+   */
+  const legacyTokens =
+    await pool.query<{
+      id: string;
+      activation_token: string;
+    }>(
+      `
+        SELECT
+          id,
+          activation_token
+        FROM activations
+        WHERE activation_token NOT LIKE 'sha256:%'
+      `,
+    );
+
+  for (
+    const activation
+    of legacyTokens.rows
+  ) {
+    await pool.query(
+      `
+        UPDATE activations
+        SET activation_token = $1
+        WHERE id = $2
+      `,
+      [
+        hashActivationToken(
+          activation.activation_token,
+        ),
+        activation.id,
+      ],
+    );
+  }
 }

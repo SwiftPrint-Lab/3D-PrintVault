@@ -2,11 +2,14 @@ import type {
   FastifyInstance,
 } from "fastify";
 
-import crypto from "node:crypto";
-
 import {
   pool,
 } from "../db.js";
+
+import {
+  createActivationToken,
+  hashActivationToken,
+} from "../token.js";
 
 type LicenseRow = {
   id: string;
@@ -26,12 +29,6 @@ type ActivationRow = {
   last_validated_at: string | null;
   deactivated_at: string | null;
 };
-
-function createActivationToken() {
-  return crypto
-    .randomBytes(32)
-    .toString("hex");
-}
 
 function bearerToken(
   authorization:
@@ -206,6 +203,28 @@ export async function registerLicenseRoutes(
           existing &&
           !existing.deactivated_at
         ) {
+          const token =
+            createActivationToken();
+
+          const tokenHash =
+            hashActivationToken(
+              token,
+            );
+
+          await client.query(
+            `
+              UPDATE activations
+              SET
+                activation_token = $1,
+                last_validated_at = NOW()
+              WHERE id = $2
+            `,
+            [
+              tokenHash,
+              existing.id,
+            ],
+          );
+
           await client.query(
             "COMMIT",
           );
@@ -215,7 +234,7 @@ export async function registerLicenseRoutes(
             plan:
               license.plan,
             activationToken:
-              existing.activation_token,
+              token,
             activatedAt:
               existing.activated_at,
           };
@@ -265,6 +284,11 @@ export async function registerLicenseRoutes(
         const token =
           createActivationToken();
 
+        const tokenHash =
+          hashActivationToken(
+            token,
+          );
+
         let activationResult;
 
         if (existing) {
@@ -288,7 +312,7 @@ export async function registerLicenseRoutes(
                   deactivated_at
               `,
               [
-                token,
+                tokenHash,
                 existing.id,
               ],
             );
@@ -318,7 +342,7 @@ export async function registerLicenseRoutes(
               [
                 license.id,
                 deviceId,
-                token,
+                tokenHash,
               ],
             );
         }
@@ -336,7 +360,7 @@ export async function registerLicenseRoutes(
           plan:
             license.plan,
           activationToken:
-            activation.activation_token,
+            token,
           activatedAt:
             activation.activated_at,
         };
@@ -395,6 +419,11 @@ export async function registerLicenseRoutes(
           });
       }
 
+      const tokenHash =
+        hashActivationToken(
+          token,
+        );
+
       const result =
         await pool.query<
           ActivationRow &
@@ -423,7 +452,7 @@ export async function registerLicenseRoutes(
             LIMIT 1
           `,
           [
-            token,
+            tokenHash,
             deviceId,
           ],
         );
@@ -510,6 +539,11 @@ export async function registerLicenseRoutes(
           });
       }
 
+      const tokenHash =
+        hashActivationToken(
+          token,
+        );
+
       const result =
         await pool.query(
           `
@@ -525,7 +559,7 @@ export async function registerLicenseRoutes(
             RETURNING a.id
           `,
           [
-            token,
+            tokenHash,
             deviceId,
             product,
           ],
