@@ -11,9 +11,14 @@ import {
   hashActivationToken,
 } from "../token.js";
 
+import {
+  hashLicenseKey,
+} from "../licenseKey.js";
+
 type LicenseRow = {
   id: string;
   license_key: string;
+  license_key_hash: string;
   product: string;
   plan: string;
   status: string;
@@ -95,6 +100,11 @@ export async function registerLicenseRoutes(
           });
       }
 
+      const licenseKeyHash =
+        hashLicenseKey(
+          licenseKey,
+        );
+
       const client =
         await pool.connect();
 
@@ -109,16 +119,17 @@ export async function registerLicenseRoutes(
               SELECT
                 id,
                 license_key,
+                license_key_hash,
                 product,
                 plan,
                 status,
                 max_activations
               FROM licenses
-              WHERE license_key = $1
+              WHERE license_key_hash = $1
               LIMIT 1
             `,
             [
-              licenseKey,
+              licenseKeyHash,
             ],
           );
 

@@ -1,13 +1,19 @@
 import { pool } from "./db.js";
+
 import {
   hashActivationToken,
 } from "./token.js";
+
+import {
+  hashLicenseKey,
+} from "./licenseKey.js";
 
 export async function initializeSchema() {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS licenses (
       id BIGSERIAL PRIMARY KEY,
       license_key TEXT NOT NULL UNIQUE,
+      license_key_hash TEXT,
       product TEXT NOT NULL,
       plan TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'active',
@@ -15,6 +21,15 @@ export async function initializeSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `);
+
+  /*
+   * Existing installations may already have the licenses table,
+   * so add the hash column separately as a migration.
+   */
+  await pool.query(`
+    ALTER TABLE licenses
+    ADD COLUMN IF NOT EXISTS license_key_hash TEXT
   `);
 
   await pool.query(`
@@ -41,12 +56,59 @@ export async function initializeSchema() {
   `);
 
   /*
-   * Migrate legacy plaintext activation tokens.
+   * ---------------------------------------------------------
+   * LICENSE KEY MIGRATION
+   * ---------------------------------------------------------
    *
-   * Existing desktop installations retain their original
-   * bearer token. The API hashes incoming bearer tokens
-   * before querying PostgreSQL, so existing installations
-   * continue working after this migration.
+   * Backfill hashes for existing plaintext license keys.
+   * The plaintext column remains temporarily for backwards-
+   * compatible administration while activation lookup moves
+   * entirely to license_key_hash.
+   */
+  const legacyLicenses =
+    await pool.query<{
+      id: string;
+      license_key: string;
+    }>(
+      `
+        SELECT
+          id,
+          license_key
+        FROM licenses
+        WHERE
+          license_key_hash IS NULL
+          OR license_key_hash = ''
+      `,
+    );
+
+  for (
+    const license
+    of legacyLicenses.rows
+  ) {
+    await pool.query(
+      `
+        UPDATE licenses
+        SET license_key_hash = $1
+        WHERE id = $2
+      `,
+      [
+        hashLicenseKey(
+          license.license_key,
+        ),
+        license.id,
+      ],
+    );
+  }
+
+  await pool.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_licenses_license_key_hash
+    ON licenses (license_key_hash)
+  `);
+
+  /*
+   * ---------------------------------------------------------
+   * ACTIVATION TOKEN MIGRATION
+   * ---------------------------------------------------------
    */
   const legacyTokens =
     await pool.query<{
