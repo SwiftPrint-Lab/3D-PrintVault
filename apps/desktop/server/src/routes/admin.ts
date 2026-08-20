@@ -8,6 +8,9 @@ import {
 
 import {
   createLicense,
+  getLicenseById,
+  listLicenses,
+  revokeLicense,
 } from "../licenseAdmin.js";
 
 import type {
@@ -19,6 +22,17 @@ const VALID_PLANS: LicensePlan[] = [
   "pro",
   "business",
 ];
+
+function validLicenseId(
+  id: string | undefined,
+): id is string {
+  return Boolean(
+    id &&
+    /^[1-9]\d*$/.test(
+      id,
+    ),
+  );
+}
 
 export async function registerAdminRoutes(
   app: FastifyInstance,
@@ -35,6 +49,74 @@ export async function registerAdminRoutes(
         service:
           "3d-printvault-admin",
         authenticated: true,
+      };
+    },
+  );
+
+  app.get(
+    "/v1/admin/licenses",
+    {
+      preHandler:
+        requireAdmin,
+    },
+    async () => {
+      const licenses =
+        await listLicenses();
+
+      return {
+        success: true,
+        licenses,
+      };
+    },
+  );
+
+  app.get(
+    "/v1/admin/licenses/:id",
+    {
+      preHandler:
+        requireAdmin,
+    },
+    async (
+      request,
+      reply,
+    ) => {
+      const params =
+        request.params as {
+          id?: string;
+        };
+
+      if (
+        !validLicenseId(
+          params.id,
+        )
+      ) {
+        return reply
+          .code(400)
+          .send({
+            success: false,
+            message:
+              "License id must be a positive integer.",
+          });
+      }
+
+      const license =
+        await getLicenseById(
+          params.id,
+        );
+
+      if (!license) {
+        return reply
+          .code(404)
+          .send({
+            success: false,
+            message:
+              "License not found.",
+          });
+      }
+
+      return {
+        success: true,
+        license,
       };
     },
   );
@@ -128,6 +210,57 @@ export async function registerAdminRoutes(
               license.maxActivations,
           },
         });
+    },
+  );
+
+  app.post(
+    "/v1/admin/licenses/:id/revoke",
+    {
+      preHandler:
+        requireAdmin,
+    },
+    async (
+      request,
+      reply,
+    ) => {
+      const params =
+        request.params as {
+          id?: string;
+        };
+
+      if (
+        !validLicenseId(
+          params.id,
+        )
+      ) {
+        return reply
+          .code(400)
+          .send({
+            success: false,
+            message:
+              "License id must be a positive integer.",
+          });
+      }
+
+      const license =
+        await revokeLicense(
+          params.id,
+        );
+
+      if (!license) {
+        return reply
+          .code(404)
+          .send({
+            success: false,
+            message:
+              "License not found.",
+          });
+      }
+
+      return {
+        success: true,
+        license,
+      };
     },
   );
 }
