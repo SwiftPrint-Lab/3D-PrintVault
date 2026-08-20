@@ -8,7 +8,6 @@ import { Canvas } from "@react-three/fiber";
 import {
     Bounds,
     Center,
-    Environment,
     OrbitControls,
 } from "@react-three/drei";
 
@@ -83,7 +82,9 @@ export function ModelViewer({
                         </Center>
                     </Bounds>
 
-                    <Environment preset="studio" />
+                    {/* Local lighting only.
+                        Avoid remote HDR environment assets so
+                        packaged Tauri builds remain CSP-safe. */}
                 </Suspense>
 
                 {interactive && (
