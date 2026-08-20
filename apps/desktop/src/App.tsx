@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 
@@ -23,12 +24,19 @@ import type {
   AssetSortOption,
 } from "./features/library/components/LibraryToolbar";
 
-import { selectAssetsForImport } from "./services/importService";
+import {
+  scanFolderForAssets,
+  scanPathsForAssets,
+  selectAssetsForImport,
+  selectWatchedFolder,
+  watchFolderForChanges,
+} from "./services/importService";
 
 import {
   addAssetToCollection,
   addAssetToProject,
   addAssetToCategory,
+  addWatchedFolder,
   assetExistsByPath,
   createCollection,
   createProject,
@@ -46,8 +54,10 @@ import {
   loadCategoryById,
   loadChildCategories,
   loadAssetsForCategory,
+  loadWatchedFolders,
   removeAssetFromCollection,
   removeAssetFromProject,
+  removeWatchedFolder,
   renameCollection,
   renameProject,
   renameCategory,
@@ -84,6 +94,7 @@ import {
   type MaterialDryingStatus,
   type Job,
   type JobStatus,
+  type WatchedFolder,
 } from "./services/databaseService";
 
 import { MachinesPage } from "./features/machines/components/MachinesPage";
@@ -168,6 +179,18 @@ function App() {
   ] = useState<Asset | null>(
     null,
   );
+
+  const [
+    watchedFolders,
+    setWatchedFolders,
+  ] = useState<WatchedFolder[]>(
+    [],
+  );
+
+  const watchedFolderScansInProgress =
+    useRef<Set<string>>(
+      new Set(),
+    );
 
   /*
    * ---------------------------------------------------------
@@ -651,6 +674,7 @@ function App() {
           savedMaterials,
           savedJobs,
           savedCategories,
+          savedWatchedFolders,
         ] =
           await Promise.all([
             loadAssets(),
@@ -660,6 +684,7 @@ function App() {
             loadMaterials(),
             loadJobs(),
             loadCategories(),
+            loadWatchedFolders(),
           ]);
 
         setAssets(
@@ -688,6 +713,10 @@ function App() {
 
         setCategories(
           savedCategories,
+        );
+
+        setWatchedFolders(
+          savedWatchedFolders,
         );
 
         if (
@@ -723,6 +752,7 @@ function App() {
         setMaterials([]);
         setJobs([]);
         setCategories([]);
+        setWatchedFolders([]);
 
         setSelectedAsset(
           null,
@@ -735,9 +765,313 @@ function App() {
 
   /*
    * ---------------------------------------------------------
+   * WATCHED FOLDER LIVE MONITORING
+   * ---------------------------------------------------------
+   */
+
+  useEffect(() => {
+    if (
+      watchedFolders.length ===
+      0
+    ) {
+      return;
+    }
+
+    let cancelled =
+      false;
+
+    const cleanupFunctions:
+      Array<() => void> = [];
+
+    async function startWatchers() {
+      for (
+        const folder
+        of watchedFolders
+      ) {
+        try {
+          const unwatch =
+            await watchFolderForChanges(
+              folder.path,
+              async (
+                changedPaths,
+              ) => {
+                if (cancelled) {
+                  return;
+                }
+
+                console.log(
+                  "[WatchedFolder] Change detected:",
+                  changedPaths,
+                );
+
+                await importFromWatchedPaths(
+                  changedPaths,
+                  folder.path,
+                );
+              },
+            );
+
+          if (cancelled) {
+            unwatch();
+
+            continue;
+          }
+
+          cleanupFunctions.push(
+            unwatch,
+          );
+
+          console.log(
+            "[WatchedFolder] Watching:",
+            folder.path,
+          );
+        } catch (error) {
+          console.error(
+            "[WatchedFolder] Unable to start watcher:",
+            folder.path,
+            error,
+          );
+        }
+      }
+    }
+
+    void startWatchers();
+
+    return () => {
+      cancelled =
+        true;
+
+      for (
+        const cleanup
+        of cleanupFunctions
+      ) {
+        cleanup();
+      }
+    };
+  }, [
+    watchedFolders,
+  ]);
+
+  /*
+   * ---------------------------------------------------------
    * IMPORT
    * ---------------------------------------------------------
    */
+
+  async function importFromWatchedFolder(
+    folderPath: string,
+  ): Promise<number> {
+    if (
+      watchedFolderScansInProgress
+        .current
+        .has(
+          folderPath,
+        )
+    ) {
+      return 0;
+    }
+
+    watchedFolderScansInProgress
+      .current
+      .add(
+        folderPath,
+      );
+
+    try {
+      const discoveredAssets =
+        await scanFolderForAssets(
+          folderPath,
+        );
+
+      const newAssets: Asset[] =
+        [];
+
+      for (
+        const asset
+        of discoveredAssets
+      ) {
+        if (!asset.path) {
+          continue;
+        }
+
+        const exists =
+          await assetExistsByPath(
+            asset.path,
+          );
+
+        if (!exists) {
+          newAssets.push(
+            asset,
+          );
+        }
+      }
+
+      if (
+        newAssets.length ===
+        0
+      ) {
+        return 0;
+      }
+
+      await saveAssets(
+        newAssets,
+      );
+
+      setAssets(
+        (currentAssets) => [
+          ...newAssets,
+          ...currentAssets,
+        ],
+      );
+
+      console.log(
+        "[WatchedFolder] Imported new assets:",
+        newAssets.length,
+        folderPath,
+      );
+
+      return newAssets.length;
+    } finally {
+      watchedFolderScansInProgress
+        .current
+        .delete(
+          folderPath,
+        );
+    }
+  }
+
+  async function importFromWatchedPaths(
+    changedPaths: string[],
+    watchedRootPath: string,
+  ): Promise<number> {
+    const discoveredAssets =
+      await scanPathsForAssets(
+        changedPaths,
+        watchedRootPath,
+      );
+
+    if (
+      discoveredAssets.length ===
+      0
+    ) {
+      return 0;
+    }
+
+    const uniqueAssetsByPath =
+      new Map<string, Asset>();
+
+    for (
+      const asset
+      of discoveredAssets
+    ) {
+      if (!asset.path) {
+        continue;
+      }
+
+      uniqueAssetsByPath.set(
+        asset.path,
+        asset,
+      );
+    }
+
+    const newAssets: Asset[] =
+      [];
+
+    for (
+      const asset
+      of uniqueAssetsByPath.values()
+    ) {
+      if (!asset.path) {
+        continue;
+      }
+
+      const exists =
+        await assetExistsByPath(
+          asset.path,
+        );
+
+      if (!exists) {
+        newAssets.push(
+          asset,
+        );
+      }
+    }
+
+    if (
+      newAssets.length ===
+      0
+    ) {
+      return 0;
+    }
+
+    await saveAssets(
+      newAssets,
+    );
+
+    setAssets(
+      (currentAssets) => [
+        ...newAssets,
+        ...currentAssets,
+      ],
+    );
+
+    console.log(
+      "[WatchedFolder] Incrementally imported assets:",
+      newAssets.length,
+    );
+
+    return newAssets.length;
+  }
+
+  async function handleAddWatchedFolder():
+    Promise<number | undefined> {
+    const folderPath =
+      await selectWatchedFolder();
+
+    if (!folderPath) {
+      return undefined;
+    }
+
+    await addWatchedFolder(
+      folderPath,
+    );
+
+    const refreshed =
+      await loadWatchedFolders();
+
+    setWatchedFolders(
+      refreshed,
+    );
+
+    return importFromWatchedFolder(
+      folderPath,
+    );
+  }
+
+  async function handleScanWatchedFolder(
+    folder: WatchedFolder,
+  ): Promise<number> {
+    return importFromWatchedFolder(
+      folder.path,
+    );
+  }
+
+  async function handleRemoveWatchedFolder(
+    folder: WatchedFolder,
+  ): Promise<void> {
+    await removeWatchedFolder(
+      folder.id,
+    );
+
+    setWatchedFolders(
+      (currentFolders) =>
+        currentFolders.filter(
+          (item) =>
+            item.id !==
+            folder.id,
+        ),
+    );
+  }
 
   async function handleImport() {
     try {
@@ -858,6 +1192,8 @@ function App() {
                 ...item,
                 lastOpenedAt:
                   now,
+                openCount:
+                  nextOpenCount,
               }
               : item,
         ),
@@ -875,6 +1211,8 @@ function App() {
                 ...item,
                 lastOpenedAt:
                   now,
+                openCount:
+                  nextOpenCount,
               }
               : item,
         ),
@@ -892,6 +1230,8 @@ function App() {
                 ...item,
                 lastOpenedAt:
                   now,
+                openCount:
+                  nextOpenCount,
               }
               : item,
         ),
@@ -5658,7 +5998,20 @@ function App() {
       "Settings"
     ) {
       return (
-        <SettingsPage />
+        <SettingsPage
+          watchedFolders={
+            watchedFolders
+          }
+          onAddWatchedFolder={
+            handleAddWatchedFolder
+          }
+          onScanWatchedFolder={
+            handleScanWatchedFolder
+          }
+          onRemoveWatchedFolder={
+            handleRemoveWatchedFolder
+          }
+        />
       );
     }
 

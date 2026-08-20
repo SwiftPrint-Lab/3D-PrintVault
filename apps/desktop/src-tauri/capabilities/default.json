@@ -18,11 +18,35 @@
     },
     "dialog:default",
     "fs:default",
-    "fs:allow-stat",
+    {
+      "identifier": "fs:allow-stat",
+      "allow": [
+        {
+          "path": "$HOME/**/*"
+        }
+      ]
+    },
     "sql:default",
     "sql:allow-execute",
     "sql:allow-select",
     "updater:default",
-    "process:default"
+    "process:default",
+    {
+      "identifier": "fs:allow-read-dir",
+      "allow": [
+        {
+          "path": "$HOME/**/*"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-watch",
+      "allow": [
+        {
+          "path": "$HOME/**/*"
+        }
+      ]
+    },
+    "fs:allow-unwatch"
   ]
 }

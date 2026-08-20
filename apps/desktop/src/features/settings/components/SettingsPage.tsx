@@ -40,6 +40,10 @@ import {
     ActivationLicensingCard,
 } from "../../licensing/components/ActivationLicensingCard";
 
+import type {
+    WatchedFolder,
+} from "../../../services/databaseService";
+
 function formatBytes(
     bytes: number,
 ): string {
@@ -86,7 +90,33 @@ function formatBytes(
     )} ${units[unitIndex]}`;
 }
 
-export function SettingsPage() {
+interface SettingsPageProps {
+    watchedFolders: WatchedFolder[];
+
+    onAddWatchedFolder:
+        () => Promise<
+            number | undefined
+        >;
+
+    onScanWatchedFolder:
+        (
+            folder:
+                WatchedFolder,
+        ) => Promise<number>;
+
+    onRemoveWatchedFolder:
+        (
+            folder:
+                WatchedFolder,
+        ) => Promise<void>;
+}
+
+export function SettingsPage({
+    watchedFolders,
+    onAddWatchedFolder,
+    onScanWatchedFolder,
+    onRemoveWatchedFolder,
+}: SettingsPageProps) {
     const [
         backupSettings,
         setBackupSettings,
@@ -360,6 +390,114 @@ export function SettingsPage() {
         }
     }
 
+    async function handleAddFolder() {
+        try {
+            setBusyAction(
+                "watched-folder-add",
+            );
+
+            setStatusMessage(
+                null,
+            );
+
+            const importedCount =
+                await onAddWatchedFolder();
+
+            if (
+                importedCount !==
+                undefined
+            ) {
+                setStatusMessage(
+                    importedCount > 0
+                        ? `${importedCount} new file${importedCount === 1 ? "" : "s"} imported from the watched folder.`
+                        : "Watched folder added. No new supported files were found.",
+                );
+            }
+        } catch (error) {
+            console.error(
+                "Failed to add watched folder:",
+                error,
+            );
+
+            alert(
+                `Unable to add watched folder: ${String(error)}`,
+            );
+        } finally {
+            setBusyAction(
+                null,
+            );
+        }
+    }
+
+    async function handleScanFolder(
+        folder: WatchedFolder,
+    ) {
+        try {
+            setBusyAction(
+                `watched-folder-scan-${folder.id}`,
+            );
+
+            setStatusMessage(
+                null,
+            );
+
+            const importedCount =
+                await onScanWatchedFolder(
+                    folder,
+                );
+
+            setStatusMessage(
+                importedCount > 0
+                    ? `${importedCount} new file${importedCount === 1 ? "" : "s"} imported.`
+                    : "Scan complete. No new supported files were found.",
+            );
+        } catch (error) {
+            console.error(
+                "Failed to scan watched folder:",
+                error,
+            );
+
+            alert(
+                `Unable to scan watched folder: ${String(error)}`,
+            );
+        } finally {
+            setBusyAction(
+                null,
+            );
+        }
+    }
+
+    async function handleRemoveFolder(
+        folder: WatchedFolder,
+    ) {
+        try {
+            setBusyAction(
+                `watched-folder-remove-${folder.id}`,
+            );
+
+            await onRemoveWatchedFolder(
+                folder,
+            );
+
+            setStatusMessage(
+                "Watched folder removed. Existing Library assets were not deleted.",
+            );
+        } catch (error) {
+            console.error(
+                "Failed to remove watched folder:",
+                error,
+            );
+
+            alert(
+                `Unable to remove watched folder: ${String(error)}`,
+            );
+        } finally {
+            setBusyAction(
+                null,
+            );
+        }
+    }
+
     async function handleRefreshDiagnostics() {
         try {
             setBusyAction(
@@ -461,6 +599,107 @@ export function SettingsPage() {
                             "0.1.1"
                         }
                     />
+
+                    {/* WATCHED FOLDERS */}
+
+                    <SettingsCard
+                        icon={
+                            <FiFolder />
+                        }
+                        title="Watched Folders"
+                        description="Automatically discover supported fabrication files from selected folders."
+                    >
+                        {watchedFolders.length ===
+                        0 ? (
+                            <div className="rounded-lg border border-dashed border-white/10 px-4 py-5 text-center">
+                                <p className="text-xs text-zinc-500">
+                                    No watched folders configured.
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="space-y-3">
+                                {watchedFolders.map(
+                                    (
+                                        folder,
+                                    ) => (
+                                        <div
+                                            key={
+                                                folder.id
+                                            }
+                                            className="flex items-center justify-between gap-4 rounded-lg border border-white/10 bg-white/[0.025] px-4 py-3"
+                                        >
+                                            <div className="min-w-0">
+                                                <p className="truncate text-xs font-medium text-zinc-300">
+                                                    {
+                                                        folder.path
+                                                    }
+                                                </p>
+
+                                                <p className="mt-1 text-[10px] text-zinc-600">
+                                                    Recursive scanning enabled
+                                                </p>
+                                            </div>
+
+                                            <div className="flex shrink-0 gap-2">
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        void handleScanFolder(
+                                                            folder,
+                                                        )
+                                                    }
+                                                    disabled={
+                                                        busyAction !==
+                                                        null
+                                                    }
+                                                    className="rounded-lg border border-white/10 px-3 py-2 text-xs text-zinc-300 transition hover:bg-white/5 disabled:opacity-40"
+                                                >
+                                                    Scan Now
+                                                </button>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        void handleRemoveFolder(
+                                                            folder,
+                                                        )
+                                                    }
+                                                    disabled={
+                                                        busyAction !==
+                                                        null
+                                                    }
+                                                    className="rounded-lg border border-red-500/20 px-3 py-2 text-xs text-red-400 transition hover:bg-red-500/10 disabled:opacity-40"
+                                                >
+                                                    Remove
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ),
+                                )}
+                            </div>
+                        )}
+
+                        <div className="mt-4 flex justify-end">
+                            <button
+                                type="button"
+                                onClick={() =>
+                                    void handleAddFolder()
+                                }
+                                disabled={
+                                    busyAction !==
+                                    null
+                                }
+                                className="rounded-lg bg-red-600 px-4 py-2 text-xs font-medium text-white transition hover:bg-red-500 disabled:opacity-40"
+                            >
+                                <FiFolder className="mr-2 inline" />
+
+                                {busyAction ===
+                                "watched-folder-add"
+                                    ? "Scanning..."
+                                    : "Add Folder"}
+                            </button>
+                        </div>
+                    </SettingsCard>
 
                     {/* BACKUP */}
 

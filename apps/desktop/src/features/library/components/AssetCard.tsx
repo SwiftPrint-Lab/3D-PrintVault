@@ -19,6 +19,9 @@ export function AssetCard({
     onSelect,
     onContextMenu,
 }: AssetCardProps) {
+    const isNew =
+        !asset.lastOpenedAt;
+
     return (
         <button
             type="button"
@@ -31,7 +34,13 @@ export function AssetCard({
                     : "border-white/10 bg-white/[0.025] hover:border-white/20 hover:bg-white/[0.04]"
                 }`}
         >
-            <div className="flex aspect-[4/3] items-center justify-center overflow-hidden bg-zinc-900">
+            <div className="relative flex aspect-[4/3] items-center justify-center overflow-hidden bg-zinc-900">
+                {isNew && (
+                    <span className="absolute right-2 top-2 z-10 rounded-md bg-red-600 px-2 py-1 text-[9px] font-bold tracking-wide text-white shadow-lg">
+                        NEW
+                    </span>
+                )}
+
                 <AssetPreview
                     asset={asset}
                     selected={selected}

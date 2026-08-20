@@ -376,6 +376,23 @@ export async function getDatabase() {
         }
 
         /*
+ * ---------------------------------------------------------
+ * WATCHED FOLDERS
+ * ---------------------------------------------------------
+ *
+ * Watched folders are directories that 3D PrintVault
+ * scans for supported fabrication files.
+ */
+
+        await db.execute(`
+          CREATE TABLE IF NOT EXISTS watched_folders (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            path TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL
+          )
+        `);
+
+        /*
          * ---------------------------------------------------------
          * COLLECTIONS
          * ---------------------------------------------------------
@@ -540,6 +557,83 @@ export async function getDatabase() {
     }
 
     return db;
+}
+
+export interface WatchedFolder {
+    id: number;
+    path: string;
+    createdAt: string;
+}
+
+export async function addWatchedFolder(
+    path: string,
+): Promise<void> {
+    const database =
+        await getDatabase();
+
+    await database.execute(
+        `
+        INSERT OR IGNORE INTO watched_folders (
+          path,
+          created_at
+        )
+        VALUES (?, ?)
+        `,
+        [
+            path,
+            new Date().toISOString(),
+        ],
+    );
+}
+
+export async function loadWatchedFolders():
+    Promise<WatchedFolder[]> {
+    const database =
+        await getDatabase();
+
+    const rows =
+        await database.select<
+            {
+                id: number;
+                path: string;
+                created_at: string;
+            }[]
+        >(
+            `
+            SELECT
+              id,
+              path,
+              created_at
+            FROM watched_folders
+            ORDER BY created_at ASC
+            `,
+        );
+
+    return rows.map(
+        (row) => ({
+            id: row.id,
+            path: row.path,
+            createdAt:
+                row.created_at,
+        }),
+    );
+}
+
+export async function removeWatchedFolder(
+    id: number,
+): Promise<void> {
+    const database =
+        await getDatabase();
+
+    await database.execute(
+        `
+        DELETE FROM watched_folders
+        WHERE id = ?
+        `,
+        [
+            id,
+        ],
+    );
 }
 
 /*
