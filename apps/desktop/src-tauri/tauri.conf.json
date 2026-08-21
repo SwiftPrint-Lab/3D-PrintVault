@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "printvault-desktop",
+  "productName": "3D-PrintVault",
   "version": "0.1.1",
   "identifier": "com.swiftprintlab.printvault",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "printvault-desktop",
+        "title": "3D-PrintVault",
         "width": 800,
         "height": 600
       }
