@@ -1,4 +1,11 @@
-import type { Asset } from "../types/asset";
+import {
+  useMemo,
+  useState,
+} from "react";
+
+import type {
+  Asset,
+} from "../types/asset";
 
 import type {
   Collection,
@@ -6,6 +13,7 @@ import type {
 } from "../../../services/databaseService";
 
 import { AssetGrid } from "./AssetGrid";
+import { FolderBrowser } from "./FolderBrowser";
 
 import {
   LibraryToolbar,
@@ -14,38 +22,53 @@ import {
   type AssetSortOption,
 } from "./LibraryToolbar";
 
+import {
+  buildAssetFolderTree,
+  getAssetsInFolder,
+} from "../utils/assetFolders";
+
 interface LibraryPageProps {
   assets: Asset[];
 
+  allAssets: Asset[];
+
   selectedAsset: Asset;
+
+  watchedFolderPath:
+  string | null;
 
   viewMode:
   | "grid"
   | "list";
 
   onViewModeChange: (
-    mode: "grid" | "list",
+    mode:
+      | "grid"
+      | "list",
   ) => void;
 
   technologyFilter:
   AssetTechnologyFilter;
 
   onTechnologyFilterChange: (
-    filter: AssetTechnologyFilter,
+    filter:
+      AssetTechnologyFilter,
   ) => void;
 
   sortOption:
   AssetSortOption;
 
   onSortOptionChange: (
-    option: AssetSortOption,
+    option:
+      AssetSortOption,
   ) => void;
 
   sortDirection:
   AssetSortDirection;
 
   onSortDirectionChange: (
-    direction: AssetSortDirection,
+    direction:
+      AssetSortDirection,
   ) => void;
 
   onAssetSelect: (
@@ -65,7 +88,8 @@ interface LibraryPageProps {
    * Collections
    */
 
-  collections: Collection[];
+  collections:
+  Collection[];
 
   onAddToCollection: (
     asset: Asset,
@@ -74,7 +98,9 @@ interface LibraryPageProps {
 
   onCreateCollection: (
     name: string,
-  ) => Promise<Collection | null>;
+  ) => Promise<
+    Collection | null
+  >;
 
   onRemoveFromCollection?: (
     asset: Asset,
@@ -84,7 +110,8 @@ interface LibraryPageProps {
    * Projects
    */
 
-  projects: Project[];
+  projects:
+  Project[];
 
   onAddToProject: (
     asset: Asset,
@@ -94,7 +121,9 @@ interface LibraryPageProps {
   onCreateProject: (
     name: string,
     description: string,
-  ) => Promise<Project | null>;
+  ) => Promise<
+    Project | null
+  >;
 
   onRemoveFromProject?: (
     asset: Asset,
@@ -103,14 +132,19 @@ interface LibraryPageProps {
 
 export function LibraryPage({
   assets,
+  allAssets,
   selectedAsset,
+  watchedFolderPath,
+
   viewMode,
   onViewModeChange,
+
   technologyFilter,
   onTechnologyFilterChange,
 
   sortOption,
   onSortOptionChange,
+
   sortDirection,
   onSortDirectionChange,
 
@@ -128,6 +162,64 @@ export function LibraryPage({
   onCreateProject,
   onRemoveFromProject,
 }: LibraryPageProps) {
+  const [
+    selectedFolderPath,
+    setSelectedFolderPath,
+  ] =
+    useState<
+      string | null
+    >(null);
+
+  const folderTree =
+    useMemo(
+      () =>
+        watchedFolderPath
+          ? buildAssetFolderTree(
+            allAssets,
+            watchedFolderPath,
+          )
+          : [],
+      [
+        allAssets,
+        watchedFolderPath,
+      ],
+    );
+
+  const displayedAssets =
+    useMemo(
+      () => {
+        if (
+          !selectedFolderPath
+        ) {
+          return assets;
+        }
+
+        return getAssetsInFolder(
+          assets,
+          selectedFolderPath,
+          true,
+        );
+      },
+      [
+        assets,
+        selectedFolderPath,
+      ],
+    );
+
+  const rootName =
+    watchedFolderPath
+      ?.replace(
+        /\\/g,
+        "/",
+      )
+      .replace(
+        /\/$/,
+        "",
+      )
+      .split("/")
+      .pop() ??
+    "Watched Folder";
+
   return (
     <section className="flex min-h-0 min-w-0 flex-1 flex-col">
       <LibraryToolbar
@@ -157,53 +249,76 @@ export function LibraryPage({
         }
       />
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-6">
-        <AssetGrid
-          assets={
-            assets
-          }
-          selectedAsset={
-            selectedAsset
-          }
-          viewMode={
-            viewMode
-          }
-          onSelect={
-            onAssetSelect
-          }
-          onDelete={
-            onDelete
-          }
-          onUpdateFavorite={
-            onUpdateFavorite
-          }
+      <div className="flex min-h-0 flex-1">
+        {watchedFolderPath && (
+          <FolderBrowser
+            folders={
+              folderTree
+            }
+            rootName={
+              rootName
+            }
+            rootPath={
+              watchedFolderPath
+            }
+            totalAssetCount={
+              allAssets.length
+            }
+            selectedFolderPath={
+              selectedFolderPath
+            }
+            onSelectFolder={
+              setSelectedFolderPath
+            }
+          />
+        )}
 
-          collections={
-            collections
-          }
-          onAddToCollection={
-            onAddToCollection
-          }
-          onCreateCollection={
-            onCreateCollection
-          }
-          onRemoveFromCollection={
-            onRemoveFromCollection
-          }
-
-          projects={
-            projects
-          }
-          onAddToProject={
-            onAddToProject
-          }
-          onCreateProject={
-            onCreateProject
-          }
-          onRemoveFromProject={
-            onRemoveFromProject
-          }
-        />
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto p-6">
+          <AssetGrid
+            assets={
+              displayedAssets
+            }
+            selectedAsset={
+              selectedAsset
+            }
+            viewMode={
+              viewMode
+            }
+            onSelect={
+              onAssetSelect
+            }
+            onDelete={
+              onDelete
+            }
+            onUpdateFavorite={
+              onUpdateFavorite
+            }
+            collections={
+              collections
+            }
+            onAddToCollection={
+              onAddToCollection
+            }
+            onCreateCollection={
+              onCreateCollection
+            }
+            onRemoveFromCollection={
+              onRemoveFromCollection
+            }
+            projects={
+              projects
+            }
+            onAddToProject={
+              onAddToProject
+            }
+            onCreateProject={
+              onCreateProject
+            }
+            onRemoveFromProject={
+              onRemoveFromProject
+            }
+          />
+        </div>
       </div>
     </section>
   );

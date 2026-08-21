@@ -25,6 +25,10 @@ import {
     revokeThreeMfThumbnailUrl,
 } from "../../../services/threeMfThumbnailService";
 
+import {
+    PdfPreview,
+} from "../preview/PdfPreview";
+
 const ModelViewer = lazy(async () => {
     const module = await import(
         "../preview/three/ModelViewer"
@@ -79,6 +83,29 @@ function AssetPreviewContent({
 
     const extension =
         asset.extension.toUpperCase();
+
+    /*
+ * ---------------------------------------------------------
+ * PDF PREVIEW
+ * ---------------------------------------------------------
+ */
+
+    if (
+        large &&
+        extension === "PDF" &&
+        asset.path
+    ) {
+        return (
+            <PdfPreview
+                path={
+                    asset.path
+                }
+                name={
+                    asset.name
+                }
+            />
+        );
+    }
 
     const iconClass = large
         ? "text-5xl"
@@ -403,8 +430,8 @@ function AssetPreviewContent({
     return (
         <div
             className={`flex ${containerClass} flex-col items-center justify-center border border-white/10 bg-zinc-800 transition ${selected
-                    ? "text-red-500"
-                    : "text-zinc-500"
+                ? "text-red-500"
+                : "text-zinc-500"
                 }`}
         >
             <div className={iconClass}>

@@ -6619,6 +6619,14 @@ function App() {
             assets={
               filteredAssets
             }
+            allAssets={
+              assets
+            }
+            watchedFolderPath={
+              watchedFolders[0]
+                ?.path ??
+              null
+            }
             selectedAsset={
               selectedAsset ??
               filteredAssets[0] ??

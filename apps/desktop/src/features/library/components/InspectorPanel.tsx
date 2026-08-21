@@ -92,6 +92,24 @@ export function InspectorPanel({
         }
     }
 
+    const extension =
+        asset.extension.toUpperCase();
+
+    const openFileLabel =
+        extension === "PDF"
+            ? "Open PDF Externally"
+            : [
+                "PNG",
+                "JPG",
+                "JPEG",
+                "WEBP",
+                "SVG",
+            ].includes(
+                extension,
+            )
+                ? "Open Image Externally"
+                : "Open File";
+
     return (
         <aside className="w-80 shrink-0 border-l border-white/10 bg-zinc-950">
             <div className="border-b border-white/10 px-5 py-4">
@@ -191,7 +209,7 @@ export function InspectorPanel({
                         >
                             <FiExternalLink />
 
-                            Open File
+                            {openFileLabel}
                         </button>
 
                         <button
