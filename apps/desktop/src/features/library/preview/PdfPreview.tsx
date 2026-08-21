@@ -1,11 +1,12 @@
 import {
-    useMemo,
+    useEffect,
+    useRef,
     useState,
 } from "react";
 
 import {
-    convertFileSrc,
-} from "@tauri-apps/api/core";
+    readFile,
+} from "@tauri-apps/plugin-fs";
 
 import {
     FiExternalLink,
@@ -13,8 +14,18 @@ import {
 } from "react-icons/fi";
 
 import {
+    GlobalWorkerOptions,
+    getDocument,
+} from "pdfjs-dist";
+
+import pdfWorkerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
+
+import {
     openFile,
 } from "../../../services/localFileIntegrationService";
+
+GlobalWorkerOptions.workerSrc =
+    pdfWorkerUrl;
 
 interface PdfPreviewProps {
     path: string;
@@ -25,19 +36,152 @@ export function PdfPreview({
     path,
     name,
 }: PdfPreviewProps) {
+    const canvasRef =
+        useRef<HTMLCanvasElement | null>(
+            null,
+        );
+
+    const [
+        loading,
+        setLoading,
+    ] = useState(true);
+
     const [
         previewFailed,
         setPreviewFailed,
     ] = useState(false);
 
-    const pdfUrl =
-        useMemo(
-            () =>
-                convertFileSrc(
-                    path,
-                ),
-            [path],
-        );
+    useEffect(() => {
+        let cancelled =
+            false;
+
+        async function renderPdf() {
+            setLoading(true);
+            setPreviewFailed(false);
+
+            try {
+                const bytes =
+                    await readFile(
+                        path,
+                    );
+
+                const pdf =
+                    await getDocument({
+                        data: bytes,
+                    }).promise;
+
+                if (cancelled) {
+                    await pdf.destroy();
+                    return;
+                }
+
+                const page =
+                    await pdf.getPage(
+                        1,
+                    );
+
+                if (cancelled) {
+                    await pdf.destroy();
+                    return;
+                }
+
+                const viewport =
+                    page.getViewport({
+                        scale: 1.5,
+                    });
+
+                const canvas =
+                    canvasRef.current;
+
+                if (!canvas) {
+                    await pdf.destroy();
+                    return;
+                }
+
+                const context =
+                    canvas.getContext(
+                        "2d",
+                    );
+
+                if (!context) {
+                    await pdf.destroy();
+                    return;
+                }
+
+                const outputScale =
+                    window.devicePixelRatio ||
+                    1;
+
+                canvas.width =
+                    Math.floor(
+                        viewport.width *
+                            outputScale,
+                    );
+
+                canvas.height =
+                    Math.floor(
+                        viewport.height *
+                            outputScale,
+                    );
+
+                /*
+                 * Render at a higher internal resolution,
+                 * but display the page fitted to the
+                 * Inspector width.
+                 */
+                canvas.style.width =
+                    "100%";
+
+                canvas.style.height =
+                    "auto";
+
+                const transform =
+                    outputScale !== 1
+                        ? [
+                              outputScale,
+                              0,
+                              0,
+                              outputScale,
+                              0,
+                              0,
+                          ]
+                        : undefined;
+
+                await page.render({
+                    canvas,
+                    canvasContext:
+                        context,
+                    viewport,
+                    transform,
+                }).promise;
+
+                await pdf.destroy();
+
+                if (!cancelled) {
+                    setLoading(false);
+                }
+            } catch (error) {
+                console.error(
+                    "Failed to render PDF preview:",
+                    error,
+                );
+
+                if (!cancelled) {
+                    setLoading(false);
+                    setPreviewFailed(true);
+                }
+            }
+        }
+
+        void renderPdf();
+
+        return () => {
+            cancelled =
+                true;
+        };
+    }, [
+        path,
+    ]);
 
     async function handleOpenExternally() {
         try {
@@ -81,13 +225,22 @@ export function PdfPreview({
     }
 
     return (
-        <iframe
-            src={pdfUrl}
-            title={`${name} PDF preview`}
-            onError={() =>
-                setPreviewFailed(true)
-            }
-            className="h-full w-full border-0 bg-white"
-        />
+        <div className="relative h-full w-full overflow-auto bg-white">
+            {loading && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-zinc-900 text-xs text-zinc-400">
+                    Loading PDF preview…
+                </div>
+            )}
+
+            <div className="flex min-h-full w-full items-start justify-center p-2">
+                <canvas
+                    ref={
+                        canvasRef
+                    }
+                    aria-label={`${name} PDF preview`}
+                    className="h-auto w-full max-w-full bg-white shadow-sm"
+                />
+            </div>
+        </div>
     );
 }
